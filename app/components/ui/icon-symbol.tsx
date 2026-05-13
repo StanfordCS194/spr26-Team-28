@@ -19,6 +19,8 @@ const MAPPING = {
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
   'person.2.fill': 'people',
+  'chart.bar.fill': 'bar-chart',
+  'person.crop.circle.fill': 'account-circle',
 } as IconMapping;
 
 /**

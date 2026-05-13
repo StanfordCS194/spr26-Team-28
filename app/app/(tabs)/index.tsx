@@ -12,7 +12,7 @@ import {
 import { WebView } from 'react-native-webview';
 import { LinearGradient } from 'expo-linear-gradient';
 
-// ─── Dataset ────────────────────────────────────────────────────────────────
+// Dataset
 
 const CITY_DATA = [
   { id: 1,  city: 'New York',     country: 'USA',          lat: 40.7128,  lng: -74.0060,  monthlyListeners: 482000, totalListens: 3200000, topSong: 'Neon Requiem'      },
@@ -39,7 +39,7 @@ const CITY_DATA = [
 
 type CityData = (typeof CITY_DATA)[0];
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// Helpers
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
@@ -47,7 +47,7 @@ function formatNumber(n: number): string {
   return n.toString();
 }
 
-// ─── Leaflet HTML (injected into WebView) ────────────────────────────────────
+// Leaflet HTML injected into the WebView
 
 function buildMapHTML(data: typeof CITY_DATA): string {
   const maxL = Math.max(...data.map(d => d.monthlyListeners));
@@ -101,7 +101,7 @@ function buildMapHTML(data: typeof CITY_DATA): string {
     const maxL     = ${maxL};
     const minL     = ${minL};
 
-    // color: teal (low) → magenta (high)
+    // Colors ramp from teal (low listeners) to magenta (high listeners).
     function getColor(listeners) {
       const t = (listeners - minL) / (maxL - minL);
       const r = Math.round(0   + t * 255);
@@ -112,7 +112,7 @@ function buildMapHTML(data: typeof CITY_DATA): string {
 
     function getRadius(listeners) {
       const t = (listeners - minL) / (maxL - minL);
-      return 7 + t * 20; // 7px – 27px
+      return 7 + t * 20; // 7px to 27px
     }
 
     data.forEach(city => {
@@ -154,7 +154,7 @@ function buildMapHTML(data: typeof CITY_DATA): string {
   `;
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// Component
 
 export default function Index() {
   const [selected, setSelected] = useState<CityData | null>(null);
@@ -177,14 +177,33 @@ export default function Index() {
       </View>
 
       {/* Map */}
-      <WebView
-        style={styles.map}
-        originWhitelist={['*']}
-        source={{ html: buildMapHTML(CITY_DATA) }}
-        onMessage={handleMessage}
-        scrollEnabled={false}
-        javaScriptEnabled
-      />
+      {Platform.OS === 'web' ? (
+        // react-native-webview does not support web. Render a plain iframe so
+        // the map still shows in browsers. The marker-click bridge only works
+        // on native, so web users see the map without the detail modal.
+        <View style={styles.map}>
+          {/* The iframe is not part of React Native's JSX types, so we cast the
+              element through `any`. It still fills its parent through CSS. */}
+          {(() => {
+            const IFrame = 'iframe' as unknown as React.ComponentType<any>;
+            return (
+              <IFrame
+                srcDoc={buildMapHTML(CITY_DATA)}
+                style={{ border: 0, width: '100%', height: '100%' }}
+              />
+            );
+          })()}
+        </View>
+      ) : (
+        <WebView
+          style={styles.map}
+          originWhitelist={['*']}
+          source={{ html: buildMapHTML(CITY_DATA) }}
+          onMessage={handleMessage}
+          scrollEnabled={false}
+          javaScriptEnabled
+        />
+      )}
 
       {/* Legend */}
       <View style={styles.legend}>
@@ -259,7 +278,7 @@ export default function Index() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// Styles
 
 const BG      = '#080c14';
 const CARD_BG = '#111827';
@@ -315,7 +334,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 6,
     borderRadius: 3,
-    // teal → magenta gradient approximated
+    // teal to magenta gradient approximated
     backgroundColor: '#00dcc8',
     // React Native doesn't support linear-gradient natively without expo-linear-gradient
     // so we use a simple color here; swap for LinearGradient if desired
