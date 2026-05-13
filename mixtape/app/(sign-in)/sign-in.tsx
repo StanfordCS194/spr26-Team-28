@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 
 import { supabase } from "@/database/db";
+import { navigateByRole } from "@/utils/navigateByRole";
 import theme from "@/assets/theme";
 
 export default function SignIn() {
@@ -42,7 +43,7 @@ export default function SignIn() {
         return;
       }
 
-      router.replace("/(tabs)");
+      await navigateByRole(router);
     } catch (error: any) {
       Alert.alert("Network error", error.message ?? "Something went wrong");
     } finally {

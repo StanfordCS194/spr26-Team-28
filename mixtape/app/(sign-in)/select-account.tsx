@@ -48,7 +48,13 @@ export default function SelectAccount() {
 
       await supabase.auth.updateUser({ data: { role: selected } });
 
-      router.push("/(sign-in)/connect-music");
+      if (selected === "artist") {
+        // Artists go straight to their dashboard — no Spotify or follow steps
+        router.replace("/(artist-tabs)");
+      } else {
+        // Fans continue to connect Spotify
+        router.push("/(sign-in)/connect-music");
+      }
     } catch (error: any) {
       Alert.alert("Network error", error.message ?? "Something went wrong");
     } finally {
@@ -58,7 +64,6 @@ export default function SelectAccount() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Scrollable content */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -98,7 +103,6 @@ export default function SelectAccount() {
         </View>
       </ScrollView>
 
-      {/* Button pinned to bottom */}
       <View style={styles.footer}>
         <Pressable
           style={({ pressed }) => [
@@ -165,11 +169,9 @@ function RoleCard({
           ]}
         />
       </View>
-
       <View style={styles.cardBody}>
         <Text style={styles.cardHeading}>{heading}</Text>
         <Text style={styles.cardDescription}>{description}</Text>
-
         {selected && (
           <View style={styles.badge}>
             <Ionicons name="checkmark" size={11} color="#FFFFFF" />
@@ -182,15 +184,8 @@ function RoleCard({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 24,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  scrollContent: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24 },
   back: {
     width: 36,
     height: 36,
@@ -200,10 +195,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 24,
   },
-  header: {
-    marginTop: 10,
-    marginBottom: 28,
-  },
+  header: { marginTop: 10, marginBottom: 28 },
   title: {
     fontFamily: theme.fonts.sansBoldItalic,
     fontSize: theme.fontSizes.title,
@@ -217,9 +209,7 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     color: theme.colors.muted,
   },
-  cards: {
-    gap: 20,
-  },
+  cards: { gap: 20 },
   card: {
     borderRadius: 18,
     borderWidth: 1.5,
@@ -231,9 +221,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
-  cardSelected: {
-    borderColor: theme.colors.text,
-  },
+  cardSelected: { borderColor: theme.colors.text },
   cardTop: {
     height: 100,
     paddingHorizontal: 20,
@@ -246,10 +234,7 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.title,
     zIndex: 1,
   },
-  circle: {
-    position: "absolute",
-    borderRadius: 999,
-  },
+  circle: { position: "absolute", borderRadius: 999 },
   circleOuter: {
     width: 100,
     height: 100,
@@ -257,12 +242,7 @@ const styles = StyleSheet.create({
     right: -20,
     top: -20,
   },
-  circleInner: {
-    width: 60,
-    height: 60,
-    right: 40,
-    top: 10,
-  },
+  circleInner: { width: 60, height: 60, right: 40, top: 10 },
   cardBody: {
     paddingHorizontal: 20,
     paddingVertical: 16,
@@ -313,12 +293,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
-  buttonPressed: {
-    backgroundColor: theme.colors.text,
-  },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
+  buttonPressed: { backgroundColor: theme.colors.text },
+  buttonDisabled: { opacity: 0.4 },
   buttonLabel: {
     fontFamily: theme.fonts.ui,
     fontSize: theme.fontSizes.button,
