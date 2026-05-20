@@ -127,7 +127,7 @@ export default function HomeTab() {
             <View style={styles.divider} />
             <Text style={styles.revokeText}>
               You can pause or revoke this any time from{" "}
-              <Text style={styles.revokeLink}>You → Sharing</Text>.
+              <Text style={styles.revokeLink}>Sharing</Text>.
             </Text>
           </View>
         ))}

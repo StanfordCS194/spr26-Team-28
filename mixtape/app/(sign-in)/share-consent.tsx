@@ -38,7 +38,7 @@ const SHARED_ITEMS = [
   },
   {
     label: "Your location",
-    sublabel: "The city you selected for your fan profile.",
+    sublabel: "The city you selected, not attached to your real name",
     shared: true,
   },
   {
@@ -50,10 +50,11 @@ const SHARED_ITEMS = [
 
 export default function ShareConsent() {
   const router = useRouter();
-  const { artistId, artistName, artistUsername } = useLocalSearchParams<{
+  const { artistId, artistName, artistUsername, topTrack } = useLocalSearchParams<{
     artistId: string;
     artistName: string;
     artistUsername: string;
+    topTrack: string;
   }>();
 
   const [saving, setSaving] = useState(false);
@@ -75,6 +76,7 @@ export default function ShareConsent() {
         fan_id: user.id,
         artist_id: artistId,
         consented_at: new Date().toISOString(),
+        top_track: topTrack || null,
       });
 
       if (error) {

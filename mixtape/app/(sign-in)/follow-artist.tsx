@@ -82,7 +82,7 @@ export default function FollowArtist() {
 
   function selectArtist(artist: Artist) {
     router.push({
-      pathname: "/(sign-in)/share-consent",
+      pathname: "/(sign-in)/favorite-song",
       params: {
         artistId: artist.id,
         artistName: artist.name,

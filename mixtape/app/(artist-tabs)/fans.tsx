@@ -62,40 +62,54 @@ function resolveCoords(
   return { lat: parseFloat(match.latitude), lng: parseFloat(match.longitude) };
 }
 
-// ─── Placeholder top song ─────────────────────────────────────────────────────
-
-const PLACEHOLDER_TOP_SONG = "Slow Burn";
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
 async function fetchMapData(artistId: string): Promise<CityData[]> {
   const { data, error } = await supabase
     .from("fan_follows")
-    .select("fan_id, profiles!fan_follows_fan_id_fkey(city, country)")
+    .select("fan_id, top_track, profiles!fan_follows_fan_id_fkey(city, country)")
     .eq("artist_id", artistId)
     .not("consented_at", "is", null);
 
   if (error) throw new Error(error.message);
   if (!data?.length) return [];
 
-  const counts: Record<string, { city: string; country: string; count: number }> = {};
+  const counts: Record<string, {
+    city: string;
+    country: string;
+    count: number;
+    tracks: string[];
+  }> = {};
 
   for (const row of data as any[]) {
     const profile = row.profiles;
     if (!profile?.city || !profile?.country) continue;
     const key = `${profile.city}||${profile.country}`;
     if (!counts[key]) {
-      counts[key] = { city: profile.city, country: profile.country, count: 0 };
+      counts[key] = { city: profile.city, country: profile.country, count: 0, tracks: [] };
     }
     counts[key].count += 1;
+    if (row.top_track) counts[key].tracks.push(row.top_track);
   }
 
   const result: CityData[] = [];
   let id = 1;
 
-  for (const { city, country, count } of Object.values(counts)) {
+  for (const { city, country, count, tracks } of Object.values(counts)) {
     const coords = resolveCoords(city, country);
     if (!coords) continue;
+
+    // Find the most frequently occurring top_track for this city
+    const topSong = tracks.length > 0
+      ? Object.entries(
+          tracks.reduce<Record<string, number>>((acc, t) => {
+            acc[t] = (acc[t] ?? 0) + 1;
+            return acc;
+          }, {})
+        ).sort((a, b) => b[1] - a[1])[0][0]
+      : "—";
+
     result.push({
       id: id++,
       city,
@@ -104,7 +118,7 @@ async function fetchMapData(artistId: string): Promise<CityData[]> {
       lng: coords.lng,
       monthlyListeners: count,
       totalListens: count * 7,
-      topSong: PLACEHOLDER_TOP_SONG,
+      topSong,
     });
   }
 
