@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "mixtape",
+    "slug": "mixtape",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/images/logo.png",
+    "scheme": "mixtape",
+    "backgroundColor": "#EFE9DC",
+    "splash": {
+      "image": "./assets/images/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#EFE9DC"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/logo.png",
+        "backgroundColor": "#EFE9DC"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/images/logo.png"
+    },
+    "plugins": ["expo-router", "expo-font"]
+  }
+}
