@@ -1,29 +1,22 @@
 /*
- * Fans tab — global listener map.
- *
- * Fetches real fan location data from Supabase:
- *   fan_follows (artist_id = current user, consented_at not null)
- *   → joined to profiles (city, country)
- *   → aggregated by city
- *   → lat/lng resolved via country-state-city package
- *
- * Top song is currently a placeholder — replace with a real per-city
- * aggregation once fan_spotify_data is populated.
+ * Fans tab — global listener map with expandable top cities panel.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
+  Animated,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import { Country, City } from "country-state-city";
 
 import { supabase } from "@/database/db";
@@ -42,9 +35,18 @@ interface CityData {
   topSong: string;
 }
 
-// ─── Coordinate lookup (built once at module load) ────────────────────────────
+// ─── Shared color helper (used by both Leaflet HTML and the city panel) ────────
 
-// Map country display name → ISO code so we can call getCitiesOfCountry
+function getDotColor(listeners: number, minL: number, maxL: number): string {
+  const t = (listeners - minL) / (maxL - minL || 1);
+  const r = Math.round(t * 255);
+  const g = Math.round(220 - t * 220);
+  const b = Math.round(200 + t * 55);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ─── Coordinate lookup ────────────────────────────────────────────────────────
+
 const COUNTRY_ISO: Record<string, string> = Object.fromEntries(
   Country.getAllCountries().map((c) => [c.name, c.isoCode])
 );
@@ -55,17 +57,12 @@ function resolveCoords(
 ): { lat: number; lng: number } | null {
   const iso = COUNTRY_ISO[countryName];
   if (!iso) return null;
-  const match = City.getCitiesOfCountry(iso)?.find(
-    (c) => c.name === cityName
-  );
+  const match = City.getCitiesOfCountry(iso)?.find((c) => c.name === cityName);
   if (!match?.latitude || !match?.longitude) return null;
-  return {
-    lat: parseFloat(match.latitude),
-    lng: parseFloat(match.longitude),
-  };
+  return { lat: parseFloat(match.latitude), lng: parseFloat(match.longitude) };
 }
 
-// ─── Dummy top song (replace when fan_spotify_data is wired up) ───────────────
+// ─── Placeholder top song ─────────────────────────────────────────────────────
 
 const PLACEHOLDER_TOP_SONG = "Slow Burn";
 
@@ -78,10 +75,6 @@ async function fetchMapData(artistId: string): Promise<CityData[]> {
     .eq("artist_id", artistId)
     .not("consented_at", "is", null);
 
-  console.log("1. raw query error:", error);
-  console.log("2. raw rows returned:", data?.length);
-  console.log("3. sample row:", JSON.stringify(data?.[0]));
-
   if (error) throw new Error(error.message);
   if (!data?.length) return [];
 
@@ -89,7 +82,6 @@ async function fetchMapData(artistId: string): Promise<CityData[]> {
 
   for (const row of data as any[]) {
     const profile = row.profiles;
-    console.log("4. profile on row:", JSON.stringify(profile));
     if (!profile?.city || !profile?.country) continue;
     const key = `${profile.city}||${profile.country}`;
     if (!counts[key]) {
@@ -98,20 +90,24 @@ async function fetchMapData(artistId: string): Promise<CityData[]> {
     counts[key].count += 1;
   }
 
-  console.log("5. aggregated cities:", JSON.stringify(counts));
-
   const result: CityData[] = [];
   let id = 1;
 
   for (const { city, country, count } of Object.values(counts)) {
     const coords = resolveCoords(city, country);
-    console.log(`6. coords for ${city}, ${country}:`, coords);
     if (!coords) continue;
-    result.push({ id: id++, city, country, lat: coords.lat, lng: coords.lng,
-      monthlyListeners: count, totalListens: count * 7, topSong: PLACEHOLDER_TOP_SONG });
+    result.push({
+      id: id++,
+      city,
+      country,
+      lat: coords.lat,
+      lng: coords.lng,
+      monthlyListeners: count,
+      totalListens: count * 7,
+      topSong: PLACEHOLDER_TOP_SONG,
+    });
   }
 
-  console.log("7. final result length:", result.length);
   return result;
 }
 
@@ -153,11 +149,7 @@ function buildMapHTML(data: CityData[]): string {
       50%  { transform: scale(1.5); opacity: 0.2; }
       100% { transform: scale(1);   opacity: 0.7; }
     }
-    .pulse-ring {
-      border-radius: 50%;
-      animation: pulse 2.2s ease-out infinite;
-      pointer-events: none;
-    }
+    .pulse-ring { border-radius: 50%; animation: pulse 2.2s ease-out infinite; pointer-events: none; }
   </style>
 </head>
 <body>
@@ -167,10 +159,7 @@ function buildMapHTML(data: CityData[]): string {
       center: [20, 10], zoom: 2, minZoom: 1.5, maxZoom: 8,
       zoomControl: false, attributionControl: false,
     });
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      { maxZoom: 19 }
-    ).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
 
     const data = ${JSON.stringify(data)};
     const maxL = ${maxL};
@@ -181,31 +170,22 @@ function buildMapHTML(data: CityData[]): string {
       const t = (listeners - minL) / range;
       return \`rgb(\${Math.round(t*255)},\${Math.round(220-t*220)},\${Math.round(200+t*55)})\`;
     }
-    function getRadius(listeners) {
-      return 7 + ((listeners - minL) / range) * 20;
-    }
+    function getRadius(listeners) { return 7 + ((listeners - minL) / range) * 20; }
 
     data.forEach(city => {
       const color  = getColor(city.monthlyListeners);
       const radius = getRadius(city.monthlyListeners);
       const ringSize = radius * 2 + 20;
-
       L.marker([city.lat, city.lng], {
         icon: L.divIcon({
           className: '',
-          html: \`<div class="pulse-ring" style="
-            width:\${ringSize}px;height:\${ringSize}px;
-            background:\${color};opacity:0.3;
-            margin-left:\${-ringSize/2}px;margin-top:\${-ringSize/2}px;
-          "></div>\`,
+          html: \`<div class="pulse-ring" style="width:\${ringSize}px;height:\${ringSize}px;background:\${color};opacity:0.3;margin-left:\${-ringSize/2}px;margin-top:\${-ringSize/2}px;"></div>\`,
           iconSize: [0, 0],
         }),
         interactive: false,
       }).addTo(map);
-
       L.circleMarker([city.lat, city.lng], {
-        radius, fillColor: color, color: '#fff',
-        weight: 1.5, opacity: 0.9, fillOpacity: 0.85,
+        radius, fillColor: color, color: '#fff', weight: 1.5, opacity: 0.9, fillOpacity: 0.85,
       }).addTo(map).on('click', () => {
         window.ReactNativeWebView?.postMessage(JSON.stringify(city));
       });
@@ -215,7 +195,157 @@ function buildMapHTML(data: CityData[]): string {
 </html>`;
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Top Cities Panel ─────────────────────────────────────────────────────────
+
+const COLLAPSED_H = 52;
+const EXPANDED_H  = 340;
+
+function TopCitiesPanel({ data }: { data: CityData[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const animH = useRef(new Animated.Value(COLLAPSED_H)).current;
+
+  function toggle() {
+    Animated.spring(animH, {
+      toValue: expanded ? COLLAPSED_H : EXPANDED_H,
+      useNativeDriver: false,
+      bounciness: 0,
+      speed: 18,
+    }).start();
+    setExpanded((e) => !e);
+  }
+
+  const sorted = [...data].sort((a, b) => b.monthlyListeners - a.monthlyListeners);
+  const maxL = sorted[0]?.monthlyListeners ?? 1;
+  const minL = sorted[sorted.length - 1]?.monthlyListeners ?? 0;
+
+  return (
+    <Animated.View style={[panelStyles.container, { height: animH }]}>
+      {/* Handle / toggle row */}
+      <TouchableOpacity
+        style={panelStyles.handle}
+        onPress={toggle}
+        activeOpacity={0.8}
+      >
+        <Text style={panelStyles.handleText}>VIEW YOUR TOP CITIES</Text>
+        <Ionicons
+          name={expanded ? "chevron-down" : "chevron-up"}
+          size={16}
+          color={theme.colors.darkMuted}
+        />
+      </TouchableOpacity>
+
+      {/* City list — only rendered when panel has space */}
+      {expanded && (
+        <ScrollView
+          style={panelStyles.list}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {sorted.map((item, index) => {
+            const pct = maxL > 0 ? item.monthlyListeners / maxL : 0;
+            const color = getDotColor(item.monthlyListeners, minL, maxL);
+            const rank = String(index + 1).padStart(2, "0");
+
+            return (
+              <View key={item.id} style={panelStyles.row}>
+                <Text style={panelStyles.rank}>{rank}</Text>
+
+                <View style={panelStyles.cityBlock}>
+                  <Text style={panelStyles.cityName}>
+                    {item.city}, {item.country}
+                  </Text>
+                  {/* Colored bar */}
+                  <View style={panelStyles.barTrack}>
+                    <View
+                      style={[
+                        panelStyles.barFill,
+                        { width: `${Math.round(pct * 100)}%`, backgroundColor: color },
+                      ]}
+                    />
+                  </View>
+                </View>
+
+                <Text style={panelStyles.count}>
+                  {formatNumber(item.monthlyListeners)}
+                </Text>
+              </View>
+            );
+          })}
+          {/* Bottom padding inside scroll */}
+          <View style={{ height: 12 }} />
+        </ScrollView>
+      )}
+    </Animated.View>
+  );
+}
+
+const panelStyles = StyleSheet.create({
+  container: {
+    backgroundColor: theme.colors.darkBackground,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  handle: {
+    height: COLLAPSED_H,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+  },
+  handleText: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.4,
+  },
+  list: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+    gap: 12,
+  },
+  rank: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.darkMuted,
+    width: 22,
+  },
+  cityBlock: {
+    flex: 1,
+    gap: 6,
+  },
+  cityName: {
+    fontFamily: theme.fonts.sansSemiBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.darkText,
+  },
+  barTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  barFill: {
+    height: 4,
+    borderRadius: 2,
+  },
+  count: {
+    fontFamily: theme.fonts.sansBold,
+    fontSize: theme.fontSizes.subtitle,
+    color: theme.colors.darkText,
+    minWidth: 40,
+    textAlign: "right",
+  },
+});
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function FansTab() {
   const [mapData, setMapData] = useState<CityData[]>([]);
@@ -226,7 +356,6 @@ export default function FansTab() {
   useEffect(() => {
     async function load() {
       try {
-        // Wait for a valid session rather than assuming one exists
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) throw new Error("Not signed in");
         const cities = await fetchMapData(session.user.id);
@@ -237,8 +366,7 @@ export default function FansTab() {
         setLoading(false);
       }
     }
-  
-    // Listen for auth state to be confirmed before loading
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (session?.user) {
@@ -247,10 +375,8 @@ export default function FansTab() {
         }
       }
     );
-  
-    // Also try immediately in case session is already ready
+
     load().catch(() => {});
-  
     return () => subscription.unsubscribe();
   }, []);
 
@@ -268,7 +394,7 @@ export default function FansTab() {
           <Text style={styles.headerLabel}>FANS</Text>
           <Text style={styles.headerTitle}>Listener Map</Text>
         </View>
-        {!loading && !error && (
+        {!loading && !error && totalFans > 0 && (
           <View style={styles.headerBadge}>
             <Text style={styles.headerBadgeText}>
               {formatNumber(totalFans)} listener{totalFans !== 1 ? "s" : ""}
@@ -277,7 +403,7 @@ export default function FansTab() {
         )}
       </View>
 
-      {/* Map / loading / error states */}
+      {/* Map / loading / error */}
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={theme.colors.primary} size="large" />
@@ -298,19 +424,8 @@ export default function FansTab() {
         />
       )}
 
-      {/* Legend */}
-      {!loading && !error && mapData.length > 0 && (
-        <View style={styles.legend}>
-          <Text style={styles.legendLabel}>Fewer listeners</Text>
-          <LinearGradient
-            colors={["#00dcc8", "#ff00cc"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.legendBar}
-          />
-          <Text style={styles.legendLabel}>More listeners</Text>
-        </View>
-      )}
+      {/* Expandable top cities panel (replaces legend) */}
+      {!loading && !error && <TopCitiesPanel data={mapData} />}
 
       {/* City detail modal */}
       <Modal
@@ -331,10 +446,7 @@ export default function FansTab() {
                   <Text style={styles.cityName}>{selected?.city}</Text>
                   <Text style={styles.countryName}>{selected?.country}</Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => setSelected(null)}
-                  style={styles.closeBtn}
-                >
+                <TouchableOpacity onPress={() => setSelected(null)} style={styles.closeBtn}>
                   <Text style={styles.closeText}>✕</Text>
                 </TouchableOpacity>
               </View>
@@ -375,7 +487,6 @@ export default function FansTab() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.darkBackground },
-
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -412,9 +523,7 @@ const styles = StyleSheet.create({
     color: theme.colors.darkMuted,
     letterSpacing: 0.5,
   },
-
   map: { flex: 1 },
-
   centered: {
     flex: 1,
     alignItems: "center",
@@ -427,25 +536,6 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.body,
     color: theme.colors.darkMuted,
   },
-
-  legend: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: theme.colors.darkBackground,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
-    gap: 10,
-  },
-  legendBar: { flex: 1, height: 6, borderRadius: 3 },
-  legendLabel: {
-    fontFamily: theme.fonts.ui,
-    fontSize: theme.fontSizes.tiny,
-    color: theme.colors.darkMuted,
-    letterSpacing: 0.3,
-  },
-
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.65)",
@@ -492,16 +582,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  closeText: {
-    fontFamily: theme.fonts.ui,
-    fontSize: 14,
-    color: theme.colors.darkMuted,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    marginVertical: 16,
-  },
+  closeText: { fontFamily: theme.fonts.ui, fontSize: 14, color: theme.colors.darkMuted },
+  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.08)", marginVertical: 16 },
   statsRow: { flexDirection: "row", alignItems: "center" },
   statBlock: { flex: 1, alignItems: "center", gap: 6 },
   statValue: {
