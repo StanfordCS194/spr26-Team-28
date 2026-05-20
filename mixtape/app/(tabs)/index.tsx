@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
+import useDataFreshness from "@/utils/useDataFreshness";
 
 interface Follow {
   artist_id: string;
@@ -52,6 +53,8 @@ export default function HomeTab() {
   const [follows, setFollows] = useState<Follow[]>([]);
   const [userId, setUserId] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const { isStale, daysSinceSync, lastFetched } = useDataFreshness();
 
   useEffect(() => {
     async function fetchData() {
@@ -92,6 +95,42 @@ export default function HomeTab() {
           <Text style={styles.wordmark}>mixtape</Text>
           <View style={styles.avatar} />
         </View>
+
+        {/* Stale data banner */}
+        {isStale && !bannerDismissed && (
+          <View style={styles.staleBanner}>
+            <View style={styles.staleBannerContent}>
+              <Ionicons
+                name="refresh-circle-outline"
+                size={20}
+                color={theme.colors.text}
+              />
+              <Text style={styles.staleBannerText}>
+                {lastFetched
+                  ? `Your listening data is ${daysSinceSync} ${daysSinceSync === 1 ? "day" : "days"} old. Sync now to keep your artists up to date.`
+                  : "Your listening data has not been synced yet. Sync now to keep your artists up to date."}
+              </Text>
+            </View>
+            <View style={styles.staleBannerActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.staleSyncButton,
+                  pressed && styles.staleSyncButtonPressed,
+                ]}
+                onPress={() => router.push("/(sign-in)/connect-music")}
+              >
+                <Text style={styles.staleSyncLabel}>Sync</Text>
+              </Pressable>
+              <Pressable
+                style={styles.staleDismiss}
+                onPress={() => setBannerDismissed(true)}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={18} color={theme.colors.muted} />
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {/* You're in label */}
         <Text style={styles.youreIn}>YOU'RE IN</Text>
@@ -306,5 +345,52 @@ const styles = StyleSheet.create({
   whatsNextBold: {
     fontFamily: theme.fonts.sansBold,
     color: theme.colors.text,
+  },
+
+  // Stale data banner
+  staleBanner: {
+    backgroundColor: "rgba(230, 139, 133, 0.15)",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "rgba(230, 139, 133, 0.3)",
+    padding: 14,
+    marginBottom: 20,
+  },
+  staleBannerContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 12,
+  },
+  staleBannerText: {
+    flex: 1,
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    lineHeight: 20,
+    color: theme.colors.text,
+  },
+  staleBannerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  staleSyncButton: {
+    backgroundColor: theme.colors.text,
+    borderRadius: 40,
+    paddingHorizontal: 22,
+    paddingVertical: 9,
+  },
+  staleSyncButtonPressed: { opacity: 0.7 },
+  staleSyncLabel: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.darkText,
+  },
+  staleDismiss: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
