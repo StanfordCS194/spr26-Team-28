@@ -18,6 +18,24 @@ import { supabase } from "@/database/db";
 import { navigateByRole } from "@/utils/navigateByRole";
 import theme from "@/assets/theme";
 
+// Map Supabase auth error messages to user-friendly text.
+function friendlyError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("invalid login credentials")) {
+    return "Wrong username or password. Please try again.";
+  }
+  if (lower.includes("email not confirmed")) {
+    return "Your account has not been confirmed yet.";
+  }
+  if (lower.includes("user not found")) {
+    return "Account not found. Check your username or create a new account.";
+  }
+  if (lower.includes("too many requests") || lower.includes("rate limit")) {
+    return "Too many attempts. Please wait a moment and try again.";
+  }
+  return message;
+}
+
 export default function SignIn() {
   const router = useRouter();
   const [username, setUsername] = useState("");
@@ -25,11 +43,25 @@ export default function SignIn() {
   const [usernameFocused, setUsernameFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
-  const isDisabled =
-    loading || username.trim().length === 0 || password.length === 0;
+  // Track whether the user has attempted to submit at least once,
+  // so we only show validation errors after the first try.
+  const [hasAttempted, setHasAttempted] = useState(false);
+
+  const usernameEmpty = username.trim().length === 0;
+  const passwordTooShort = password.length > 0 && password.length < 6;
+  const passwordEmpty = password.length === 0;
+
+  const isDisabled = loading || usernameEmpty || passwordEmpty;
 
   async function signIn() {
+    setHasAttempted(true);
+
+    if (usernameEmpty || passwordEmpty) {
+      return;
+    }
+
     const trimmedUsername = username.trim().toLowerCase();
     setLoading(true);
     try {
@@ -39,7 +71,7 @@ export default function SignIn() {
       });
 
       if (error) {
-        Alert.alert("Sign in failed", error.message);
+        Alert.alert("Sign in failed", friendlyError(error.message));
         return;
       }
 
@@ -75,44 +107,80 @@ export default function SignIn() {
           </View>
 
           <View style={styles.fields}>
-            <View
-              style={[
-                styles.inputWrapper,
-                usernameFocused && styles.inputWrapperFocused,
-              ]}
-            >
-              <Text style={styles.inputLabel}>USERNAME</Text>
-              <TextInput
-                style={styles.input}
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder=""
-                onFocus={() => setUsernameFocused(true)}
-                onBlur={() => setUsernameFocused(false)}
-              />
+            <View>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  usernameFocused && styles.inputWrapperFocused,
+                  hasAttempted && usernameEmpty && styles.inputWrapperError,
+                ]}
+              >
+                <Text style={styles.inputLabel}>USERNAME</Text>
+                <TextInput
+                  style={styles.input}
+                  value={username}
+                  onChangeText={setUsername}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder=""
+                  onFocus={() => setUsernameFocused(true)}
+                  onBlur={() => setUsernameFocused(false)}
+                />
+              </View>
+              {hasAttempted && usernameEmpty && (
+                <Text style={styles.errorText}>Username is required.</Text>
+              )}
             </View>
 
-            <View
-              style={[
-                styles.inputWrapper,
-                passwordFocused && styles.inputWrapperFocused,
-              ]}
-            >
-              <Text style={styles.inputLabel}>PASSWORD</Text>
-              <TextInput
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                placeholder=""
-                onFocus={() => setPasswordFocused(true)}
-                onBlur={() => setPasswordFocused(false)}
-              />
+            <View>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  passwordFocused && styles.inputWrapperFocused,
+                  hasAttempted && passwordEmpty && styles.inputWrapperError,
+                ]}
+              >
+                <Text style={styles.inputLabel}>PASSWORD</Text>
+                <View style={styles.passwordRow}>
+                  <TextInput
+                    style={[styles.input, styles.passwordInput]}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    placeholder=""
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => setPasswordFocused(false)}
+                  />
+                  <Pressable
+                    onPress={() => setShowPassword(!showPassword)}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={showPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color={theme.colors.muted}
+                    />
+                  </Pressable>
+                </View>
+              </View>
+              {hasAttempted && passwordEmpty && (
+                <Text style={styles.errorText}>Password is required.</Text>
+              )}
+              {hasAttempted && passwordTooShort && (
+                <Text style={styles.errorText}>
+                  Password must be at least 6 characters.
+                </Text>
+              )}
             </View>
           </View>
+
+          <Pressable
+            style={styles.forgotLink}
+            onPress={() => router.push("/(sign-in)/forgot-password")}
+          >
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </Pressable>
 
           <View style={styles.spacer} />
         </ScrollView>
@@ -181,6 +249,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   inputWrapperFocused: { borderColor: theme.colors.text },
+  inputWrapperError: { borderColor: theme.colors.danger },
   inputLabel: {
     fontFamily: theme.fonts.sansMedium,
     fontSize: theme.fontSizes.tiny,
@@ -193,6 +262,29 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.subtitle,
     color: theme.colors.text,
     padding: 0,
+  },
+  passwordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  passwordInput: {
+    flex: 1,
+  },
+  errorText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.danger,
+    marginTop: 6,
+    marginLeft: 16,
+  },
+  forgotLink: {
+    alignSelf: "center",
+    marginTop: 20,
+  },
+  forgotText: {
+    fontFamily: theme.fonts.sansMedium,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.secondary,
   },
   footer: {
     paddingHorizontal: 24,
