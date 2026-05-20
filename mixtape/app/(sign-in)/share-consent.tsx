@@ -37,6 +37,11 @@ const SHARED_ITEMS = [
     shared: true,
   },
   {
+    label: "Your location",
+    sublabel: "The city you selected for your fan profile.",
+    shared: true,
+  },
+  {
     label: "Other artists you share with on Mixtape",
     sublabel: null,
     shared: false,

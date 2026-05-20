@@ -52,8 +52,8 @@ export default function SelectAccount() {
         // Artists go straight to their dashboard — no Spotify or follow steps
         router.replace("/(artist-tabs)");
       } else {
-        // Fans continue to connect Spotify
-        router.push("/(sign-in)/connect-music");
+        // Fans continue to select location
+        router.push("/(sign-in)/select-location");
       }
     } catch (error: any) {
       Alert.alert("Network error", error.message ?? "Something went wrong");
