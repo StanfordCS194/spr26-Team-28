@@ -61,6 +61,12 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="artist"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
