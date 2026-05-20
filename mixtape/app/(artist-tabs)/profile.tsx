@@ -1,6 +1,7 @@
 import {
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -46,15 +47,13 @@ type Profile = {
   genre: string | null;
   country: string | null;
   city: string | null;
+  instagram: string | null;
+  tiktok: string | null;
+  website: string | null;
 };
 
-type AccountRow = {
-  key: string;
-  name: string;
-  handle: string | null;
-  connected: boolean;
-  brandColor: string;
-};
+// Brand color for Spotify connected account row
+const SPOTIFY_BRAND_COLOR = theme.colors.spotify;
 
 function initialsFromName(name: string): string {
   return (
@@ -95,6 +94,9 @@ export default function ProfileTab() {
   const [editGenres, setEditGenres] = useState<string[]>([]);
   const [editCity, setEditCity] = useState("");
   const [editCountry, setEditCountry] = useState("");
+  const [editInstagram, setEditInstagram] = useState("");
+  const [editTiktok, setEditTiktok] = useState("");
+  const [editWebsite, setEditWebsite] = useState("");
 
   useEffect(() => {
     mounted.current = true;
@@ -118,7 +120,7 @@ export default function ProfileTab() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("name, username, role, bio, genre, country, city")
+        .select("name, username, role, bio, genre, country, city, instagram, tiktok, website")
         .eq("id", user.id)
         .single<Profile>();
 
@@ -142,6 +144,9 @@ export default function ProfileTab() {
     setEditGenres(parseGenreTags(profile.genre));
     setEditCity(profile.city ?? "");
     setEditCountry(profile.country ?? "");
+    setEditInstagram(profile.instagram ?? "");
+    setEditTiktok(profile.tiktok ?? "");
+    setEditWebsite(profile.website ?? "");
     setEditing(true);
   }
 
@@ -170,6 +175,9 @@ export default function ProfileTab() {
         genre: editGenres.length > 0 ? editGenres.join(", ") : null,
         city: editCity.trim() || null,
         country: editCountry.trim() || null,
+        instagram: editInstagram.trim() || null,
+        tiktok: editTiktok.trim() || null,
+        website: editWebsite.trim() || null,
       };
 
       const { error } = await supabase
@@ -191,12 +199,29 @@ export default function ProfileTab() {
     }
   }
 
-  const accounts: AccountRow[] = [
-    { key: "spotify", name: "Spotify", handle: email || null, connected: true, brandColor: theme.colors.spotify },
-    { key: "apple", name: "Apple Music", handle: null, connected: false, brandColor: "rgba(255,255,255,0.12)" },
-    { key: "instagram", name: "Instagram", handle: null, connected: false, brandColor: "rgba(255,255,255,0.12)" },
-    { key: "tiktok", name: "TikTok", handle: null, connected: false, brandColor: "rgba(255,255,255,0.12)" },
-  ];
+  // Helper to strip a leading @ if the user typed one
+  function stripAtSign(handle: string): string {
+    return handle.startsWith("@") ? handle.slice(1) : handle;
+  }
+
+  // Build the full URL for a social link
+  function socialUrl(platform: "instagram" | "tiktok" | "website", value: string): string {
+    if (platform === "instagram") return `https://instagram.com/${stripAtSign(value)}`;
+    if (platform === "tiktok") return `https://tiktok.com/@${stripAtSign(value)}`;
+    // For website, ensure it has a protocol
+    if (!/^https?:\/\//i.test(value)) return `https://${value}`;
+    return value;
+  }
+
+  // Open a URL in the default browser
+  function openLink(url: string) {
+    Linking.openURL(url).catch(() => {
+      Alert.alert("Could not open link", url);
+    });
+  }
+
+  // Whether the profile has any social links set
+  const hasSocialLinks = Boolean(profile?.instagram || profile?.tiktok || profile?.website);
 
   async function onSignOut() {
     setSigningOut(true);
@@ -398,46 +423,126 @@ export default function ProfileTab() {
             </>
           )}
 
-          {/* Connected accounts */}
+          {/* Connected account - Spotify (read-only) */}
           <Text style={styles.sectionLabel}>CONNECTED ACCOUNTS</Text>
           <View style={styles.listCard}>
-            {accounts.map((a, i) => {
-              const isLast = i === accounts.length - 1;
-              return (
-                <View
-                  key={a.key}
-                  style={[styles.row, !isLast && styles.rowBorder]}
-                >
-                  <View style={styles.rowLeft}>
-                    <View
-                      style={[styles.brandDot, { backgroundColor: a.brandColor }]}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.rowTitle}>{a.name}</Text>
-                      <Text style={styles.rowMeta}>
-                        {a.connected ? a.handle ?? "Connected" : "Not connected"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Pressable
-                    hitSlop={BIG_HIT_SLOP}
-                    onPress={() =>
-                      Alert.alert("Coming soon", `${a.name} linking is not wired up yet.`)
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.rowAction,
-                        !a.connected && styles.rowActionPrimary,
-                      ]}
-                    >
-                      {a.connected ? "Manage" : "Connect"}
-                    </Text>
-                  </Pressable>
+            <View style={styles.row}>
+              <View style={styles.rowLeft}>
+                <View style={[styles.brandDot, { backgroundColor: SPOTIFY_BRAND_COLOR }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>Spotify</Text>
+                  <Text style={styles.rowMeta}>{email || "Connected"}</Text>
                 </View>
-              );
-            })}
+              </View>
+              <Text style={styles.rowAction}>Connected</Text>
+            </View>
           </View>
+
+          {/* Social links - edit mode */}
+          {editing && (
+            <>
+              <Text style={styles.sectionLabel}>SOCIAL LINKS</Text>
+              <View style={styles.card}>
+                <View style={styles.locationFields}>
+                  <View style={styles.locationField}>
+                    <Text style={styles.fieldLabel}>Instagram</Text>
+                    <TextInput
+                      style={styles.fieldInput}
+                      value={editInstagram}
+                      onChangeText={setEditInstagram}
+                      placeholder="@yourhandle"
+                      placeholderTextColor={theme.colors.darkMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
+                  <View style={styles.locationField}>
+                    <Text style={styles.fieldLabel}>TikTok</Text>
+                    <TextInput
+                      style={styles.fieldInput}
+                      value={editTiktok}
+                      onChangeText={setEditTiktok}
+                      placeholder="@yourhandle"
+                      placeholderTextColor={theme.colors.darkMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
+                  <View style={styles.locationField}>
+                    <Text style={styles.fieldLabel}>Website</Text>
+                    <TextInput
+                      style={styles.fieldInput}
+                      value={editWebsite}
+                      onChangeText={setEditWebsite}
+                      placeholder="https://yoursite.com"
+                      placeholderTextColor={theme.colors.darkMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="url"
+                    />
+                  </View>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* Social links - view mode */}
+          {!editing && hasSocialLinks && (
+            <>
+              <Text style={styles.sectionLabel}>SOCIAL LINKS</Text>
+              <View style={styles.listCard}>
+                {profile?.instagram && (
+                  <Pressable
+                    style={[styles.row, (profile?.tiktok || profile?.website) ? styles.rowBorder : undefined]}
+                    onPress={() => openLink(socialUrl("instagram", profile.instagram!))}
+                  >
+                    <View style={styles.rowLeft}>
+                      <Ionicons name="logo-instagram" size={18} color={theme.colors.darkText} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.rowTitle}>Instagram</Text>
+                        <Text style={styles.rowMeta}>
+                          @{stripAtSign(profile.instagram)}
+                        </Text>
+                      </View>
+                    </View>
+                    <Ionicons name="open-outline" size={16} color={theme.colors.darkMuted} />
+                  </Pressable>
+                )}
+                {profile?.tiktok && (
+                  <Pressable
+                    style={[styles.row, profile?.website ? styles.rowBorder : undefined]}
+                    onPress={() => openLink(socialUrl("tiktok", profile.tiktok!))}
+                  >
+                    <View style={styles.rowLeft}>
+                      <Ionicons name="logo-tiktok" size={18} color={theme.colors.darkText} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.rowTitle}>TikTok</Text>
+                        <Text style={styles.rowMeta}>
+                          @{stripAtSign(profile.tiktok)}
+                        </Text>
+                      </View>
+                    </View>
+                    <Ionicons name="open-outline" size={16} color={theme.colors.darkMuted} />
+                  </Pressable>
+                )}
+                {profile?.website && (
+                  <Pressable
+                    style={styles.row}
+                    onPress={() => openLink(socialUrl("website", profile.website!))}
+                  >
+                    <View style={styles.rowLeft}>
+                      <Ionicons name="globe-outline" size={18} color={theme.colors.darkText} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.rowTitle}>Website</Text>
+                        <Text style={styles.rowMeta}>{profile.website}</Text>
+                      </View>
+                    </View>
+                    <Ionicons name="open-outline" size={16} color={theme.colors.darkMuted} />
+                  </Pressable>
+                )}
+              </View>
+            </>
+          )}
 
           {/* Account info */}
           <Text style={styles.sectionLabel}>ACCOUNT</Text>
@@ -744,5 +849,4 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.small,
     color: theme.colors.darkMuted,
   },
-  rowActionPrimary: { color: theme.colors.primary },
 });
