@@ -46,7 +46,40 @@ type Profile = {
   genre: string | null;
   country: string | null;
   city: string | null;
+  featured_tracks: string | null;
 };
+
+type Release = {
+  id: string;
+  title: string;
+  release_type: string | null;
+};
+
+const MAX_FEATURED_TRACKS = 3;
+
+// Parse a comma-separated string of release IDs into an array.
+function parseFeaturedIds(raw: string | null): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Serialize an array of release IDs into a comma-separated string.
+function serializeFeaturedIds(ids: string[]): string | null {
+  return ids.length > 0 ? ids.join(",") : null;
+}
+
+// Format a release type string into a short display label.
+function releaseTypeLabel(releaseType: string | null): string {
+  if (!releaseType) return "Release";
+  const lower = releaseType.toLowerCase();
+  if (lower === "single") return "Single";
+  if (lower === "ep") return "EP";
+  if (lower === "album") return "Album";
+  return capitalize(releaseType);
+}
 
 type AccountRow = {
   key: string;
@@ -96,6 +129,10 @@ export default function ProfileTab() {
   const [editCity, setEditCity] = useState("");
   const [editCountry, setEditCountry] = useState("");
 
+  // Featured tracks state
+  const [releases, setReleases] = useState<Release[]>([]);
+  const [editFeaturedIds, setEditFeaturedIds] = useState<string[]>([]);
+
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -118,7 +155,7 @@ export default function ProfileTab() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("name, username, role, bio, genre, country, city")
+        .select("name, username, role, bio, genre, country, city, featured_tracks")
         .eq("id", user.id)
         .single<Profile>();
 
@@ -128,6 +165,17 @@ export default function ProfileTab() {
       }
       if (!mounted.current) return;
       if (data) setProfile(data);
+
+      // Load releases owned by this artist for the featured track selector.
+      const { data: releasesData } = await supabase
+        .from("releases")
+        .select("id, title, release_type")
+        .eq("artist_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (mounted.current && releasesData) {
+        setReleases(releasesData as Release[]);
+      }
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not load profile.");
     } finally {
@@ -142,6 +190,7 @@ export default function ProfileTab() {
     setEditGenres(parseGenreTags(profile.genre));
     setEditCity(profile.city ?? "");
     setEditCountry(profile.country ?? "");
+    setEditFeaturedIds(parseFeaturedIds(profile.featured_tracks));
     setEditing(true);
   }
 
@@ -153,6 +202,17 @@ export default function ProfileTab() {
     setEditGenres((prev) =>
       prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
     );
+  }
+
+  // Toggle a release in the featured tracks list, capped at MAX_FEATURED_TRACKS.
+  function toggleFeaturedTrack(releaseId: string) {
+    setEditFeaturedIds((prev) => {
+      if (prev.includes(releaseId)) {
+        return prev.filter((id) => id !== releaseId);
+      }
+      if (prev.length >= MAX_FEATURED_TRACKS) return prev;
+      return [...prev, releaseId];
+    });
   }
 
   async function saveProfile() {
@@ -170,6 +230,7 @@ export default function ProfileTab() {
         genre: editGenres.length > 0 ? editGenres.join(", ") : null,
         city: editCity.trim() || null,
         country: editCountry.trim() || null,
+        featured_tracks: serializeFeaturedIds(editFeaturedIds),
       };
 
       const { error } = await supabase
@@ -221,6 +282,13 @@ export default function ProfileTab() {
   const genres = parseGenreTags(profile?.genre ?? null);
   const locationStr = [profile?.city, profile?.country].filter(Boolean).join(", ");
   const metaStr = [genres[0], locationStr].filter(Boolean).join("  ·  ") || "Add your details";
+
+  // Build the list of featured releases to display in view mode.
+  const featuredIds = parseFeaturedIds(profile?.featured_tracks ?? null);
+  const featuredReleases = featuredIds
+    .map((id) => releases.find((r) => r.id === id))
+    .filter((r): r is Release => r != null)
+    .slice(0, MAX_FEATURED_TRACKS);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -323,6 +391,107 @@ export default function ProfileTab() {
               </Text>
             )}
           </View>
+
+          {/* Featured tracks (view mode) */}
+          {!editing && (
+            <>
+              <Text style={styles.sectionLabel}>FEATURED TRACKS</Text>
+              {featuredReleases.length > 0 ? (
+                <View style={styles.featuredList}>
+                  {featuredReleases.map((r) => (
+                    <View key={r.id} style={styles.featuredCard}>
+                      <View style={styles.featuredLeft}>
+                        <Text style={styles.featuredTitle}>{r.title}</Text>
+                        <View style={styles.featuredMeta}>
+                          <View style={styles.featuredBadge}>
+                            <Text style={styles.featuredBadgeText}>
+                              {releaseTypeLabel(r.release_type)}
+                            </Text>
+                          </View>
+                          <Text style={styles.featuredDuration}>--:--</Text>
+                        </View>
+                      </View>
+                      <Ionicons
+                        name="play-circle-outline"
+                        size={28}
+                        color={theme.colors.darkMuted}
+                      />
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.card}>
+                  <Text style={styles.featuredEmptyText}>
+                    Add tracks from your releases to feature here
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
+
+          {/* Featured tracks (edit mode) */}
+          {editing && (
+            <>
+              <Text style={styles.sectionLabel}>FEATURED TRACKS</Text>
+              <View style={styles.card}>
+                <Text style={styles.featuredHint}>
+                  Select up to {MAX_FEATURED_TRACKS} releases to feature on your profile.
+                </Text>
+                {releases.length === 0 ? (
+                  <Text style={styles.featuredEmptyText}>
+                    No releases found. Add releases first.
+                  </Text>
+                ) : (
+                  <View style={styles.featuredSelectorList}>
+                    {releases.map((r) => {
+                      const selected = editFeaturedIds.includes(r.id);
+                      const atLimit =
+                        editFeaturedIds.length >= MAX_FEATURED_TRACKS && !selected;
+                      return (
+                        <Pressable
+                          key={r.id}
+                          style={[
+                            styles.featuredSelectorRow,
+                            selected && styles.featuredSelectorRowSelected,
+                            atLimit && styles.featuredSelectorRowDisabled,
+                          ]}
+                          onPress={() => toggleFeaturedTrack(r.id)}
+                          disabled={atLimit}
+                        >
+                          <View style={styles.featuredSelectorInfo}>
+                            <Text
+                              style={[
+                                styles.featuredSelectorTitle,
+                                selected && styles.featuredSelectorTitleSelected,
+                              ]}
+                            >
+                              {r.title}
+                            </Text>
+                            <View style={styles.featuredBadge}>
+                              <Text style={styles.featuredBadgeText}>
+                                {releaseTypeLabel(r.release_type)}
+                              </Text>
+                            </View>
+                          </View>
+                          <Ionicons
+                            name={selected ? "checkmark-circle" : "ellipse-outline"}
+                            size={22}
+                            color={
+                              selected
+                                ? theme.colors.primary
+                                : atLimit
+                                  ? "rgba(255,255,255,0.15)"
+                                  : theme.colors.darkMuted
+                            }
+                          />
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            </>
+          )}
 
           {/* Genres (edit mode) */}
           {editing && (
@@ -651,6 +820,108 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.12)",
     borderRadius: 10,
     padding: 12,
+  },
+
+  // Featured tracks - view mode
+  featuredList: {
+    gap: 10,
+    marginBottom: 20,
+  },
+  featuredCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: theme.colors.darkCard,
+    borderRadius: 14,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary,
+  },
+  featuredLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  featuredTitle: {
+    fontFamily: theme.fonts.sansSemiBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.darkText,
+    marginBottom: 6,
+  },
+  featuredMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  featuredBadge: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  featuredBadgeText: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.4,
+  },
+  featuredDuration: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.3,
+  },
+  featuredEmptyText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.darkMuted,
+    lineHeight: 20,
+  },
+
+  // Featured tracks - edit mode
+  featuredHint: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.darkMuted,
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  featuredSelectorList: {
+    gap: 8,
+  },
+  featuredSelectorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(255,255,255,0.03)",
+  },
+  featuredSelectorRowSelected: {
+    borderColor: theme.colors.primary,
+    backgroundColor: "rgba(230,139,133,0.1)",
+  },
+  featuredSelectorRowDisabled: {
+    opacity: 0.4,
+  },
+  featuredSelectorInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginRight: 12,
+  },
+  featuredSelectorTitle: {
+    fontFamily: theme.fonts.sansSemiBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.darkText,
+  },
+  featuredSelectorTitleSelected: {
+    color: theme.colors.primary,
   },
 
   genreGrid: {
