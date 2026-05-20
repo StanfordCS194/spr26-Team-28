@@ -1,77 +1,193 @@
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { Ionicons } from "@expo/vector-icons";
 
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
 
-// Simple sparkline chart using SVG-like View positioning
-function SparklineChart() {
-  // Dummy trend data — replace with real data from fan_spotify_data
-  const points = [30, 35, 28, 40, 38, 45, 50, 48, 55, 60, 58, 65, 72, 75, 80];
-  const max = Math.max(...points);
-  const min = Math.min(...points);
-  const range = max - min;
-  const width = 100;
-  const height = 60;
-
-  return (
-    <View style={chartStyles.container}>
-      {points.map((val, i) => {
-        const x = (i / (points.length - 1)) * width;
-        const y = height - ((val - min) / range) * height;
-        return (
-          <View
-            key={i}
-            style={[
-              chartStyles.dot,
-              {
-                left: `${x}%`,
-                bottom: `${((val - min) / range) * 100}%`,
-              },
-            ]}
-          />
-        );
-      })}
-      {/* Gradient fill simulation */}
-      <View style={chartStyles.line} />
-    </View>
-  );
-}
-
-const chartStyles = StyleSheet.create({
-  container: {
-    height: 80,
-    width: "100%",
-    position: "relative",
-    marginTop: 16,
-    overflow: "hidden",
-  },
-  dot: {
-    position: "absolute",
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colors.secondary,
-  },
-  line: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 2,
-    backgroundColor: "rgba(66,129,164,0.3)",
-  },
-});
+// Milestone thresholds for fan count badges.
+const MILESTONE_THRESHOLDS = [5, 10, 25, 50, 100, 250, 500, 1000];
 
 interface Profile {
   name: string;
 }
 
+// A single item in the activity feed.
+interface ActivityItem {
+  id: string;
+  type: "new_fan" | "milestone";
+  message: string;
+  timestamp: Date;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+}
+
+// Stats about fan engagement over recent weeks.
+interface EngagementStats {
+  thisWeekFans: number;
+  lastWeekFans: number;
+  avgTopTracksPerFan: number;
+}
+
+// Returns the highest milestone threshold that the count has reached,
+// or null if the count is below the lowest threshold.
+function getHighestMilestone(count: number): number | null {
+  let result: number | null = null;
+  for (const threshold of MILESTONE_THRESHOLDS) {
+    if (count >= threshold) {
+      result = threshold;
+    }
+  }
+  return result;
+}
+
+// Formats a Date as a short relative time string, e.g. "2h ago" or "3d ago".
+function formatRelativeTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 30) return `${diffDays}d ago`;
+  return `${Math.floor(diffDays / 30)}mo ago`;
+}
+
+// Card component for a single feed item with icon, text, and timestamp.
+function ActivityCard({ item }: { item: ActivityItem }) {
+  return (
+    <View style={feedStyles.card}>
+      <View
+        style={[feedStyles.iconCircle, { backgroundColor: item.iconColor + "25" }]}
+      >
+        <Ionicons name={item.icon} size={18} color={item.iconColor} />
+      </View>
+      <View style={feedStyles.cardContent}>
+        <Text style={feedStyles.cardMessage}>{item.message}</Text>
+        <Text style={feedStyles.cardTimestamp}>
+          {formatRelativeTime(item.timestamp)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const feedStyles = StyleSheet.create({
+  card: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: theme.colors.darkCard,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    gap: 12,
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardContent: {
+    flex: 1,
+  },
+  cardMessage: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    lineHeight: 20,
+    color: theme.colors.darkText,
+    marginBottom: 4,
+  },
+  cardTimestamp: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.darkMuted,
+  },
+});
+
+// Single stat display for the engagement section.
+function EngagementStat({
+  label,
+  value,
+  subtext,
+}: {
+  label: string;
+  value: string;
+  subtext?: string;
+}) {
+  return (
+    <View style={engagementStyles.statBox}>
+      <Text style={engagementStyles.statValue}>{value}</Text>
+      <Text style={engagementStyles.statLabel}>{label}</Text>
+      {subtext ? (
+        <Text style={engagementStyles.statSubtext}>{subtext}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+const engagementStyles = StyleSheet.create({
+  statBox: {
+    flex: 1,
+    backgroundColor: theme.colors.darkCard,
+    borderRadius: 14,
+    padding: 14,
+    alignItems: "center",
+  },
+  statValue: {
+    fontFamily: theme.fonts.sansBold,
+    fontSize: theme.fontSizes.title,
+    color: theme.colors.darkText,
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontFamily: theme.fonts.ui,
+    fontSize: 9,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.5,
+    textAlign: "center",
+  },
+  statSubtext: {
+    fontFamily: theme.fonts.ui,
+    fontSize: 9,
+    color: theme.colors.secondary,
+    letterSpacing: 0.3,
+    marginTop: 4,
+    textAlign: "center",
+  },
+});
+
 export default function ArtistInsights() {
   const [artistName, setArtistName] = useState("");
   const [fanCount, setFanCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [activityItems, setActivityItems] = useState<ActivityItem[]>([]);
+  const [engagement, setEngagement] = useState<EngagementStats>({
+    thisWeekFans: 0,
+    lastWeekFans: 0,
+    avgTopTracksPerFan: 0,
+  });
+
+  // Build milestone activity items from the current fan count.
+  const buildMilestoneItems = useCallback((count: number): ActivityItem[] => {
+    const milestone = getHighestMilestone(count);
+    if (milestone === null) return [];
+    return [
+      {
+        id: `milestone-${milestone}`,
+        type: "milestone",
+        message: `${milestone} fans are now sharing with you`,
+        timestamp: new Date(),
+        icon: "trophy-outline",
+        iconColor: theme.colors.primary,
+      },
+    ];
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
@@ -82,7 +198,7 @@ export default function ArtistInsights() {
         } = await supabase.auth.getUser();
         if (!user) return;
 
-        // Get artist profile
+        // Fetch artist profile name.
         const { data: profile } = await supabase
           .from("profiles")
           .select("name")
@@ -91,14 +207,98 @@ export default function ArtistInsights() {
 
         if (profile) setArtistName((profile as Profile).name);
 
-        // Count fans who have consented to share with this artist
-        const { count } = await supabase
+        // Count all fans who have consented to share.
+        const { count: totalCount } = await supabase
           .from("fan_follows")
           .select("*", { count: "exact", head: true })
           .eq("artist_id", user.id)
           .not("consented_at", "is", null);
 
-        setFanCount(count ?? 0);
+        const total = totalCount ?? 0;
+        setFanCount(total);
+
+        // Fetch recent fan follows for the activity feed (last 30 days).
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const { data: recentFollows } = await supabase
+          .from("fan_follows")
+          .select("id, consented_at")
+          .eq("artist_id", user.id)
+          .not("consented_at", "is", null)
+          .gte("consented_at", thirtyDaysAgo.toISOString())
+          .order("consented_at", { ascending: false })
+          .limit(10);
+
+        // Build activity feed from recent follows and milestones.
+        const newFanItems: ActivityItem[] = (recentFollows ?? []).map(
+          (follow: { id: string; consented_at: string }) => ({
+            id: `fan-${follow.id}`,
+            type: "new_fan" as const,
+            message: "A new fan started sharing with you",
+            timestamp: new Date(follow.consented_at),
+            icon: "person-add-outline" as keyof typeof Ionicons.glyphMap,
+            iconColor: theme.colors.secondary,
+          }),
+        );
+
+        const milestoneItems = buildMilestoneItems(total);
+        const combined = [...milestoneItems, ...newFanItems]
+          .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+          .slice(0, 15);
+        setActivityItems(combined);
+
+        // Compute weekly engagement stats.
+        const now = new Date();
+        const startOfThisWeek = new Date(now);
+        startOfThisWeek.setDate(now.getDate() - now.getDay());
+        startOfThisWeek.setHours(0, 0, 0, 0);
+
+        const startOfLastWeek = new Date(startOfThisWeek);
+        startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+
+        const { count: thisWeekCount } = await supabase
+          .from("fan_follows")
+          .select("*", { count: "exact", head: true })
+          .eq("artist_id", user.id)
+          .not("consented_at", "is", null)
+          .gte("consented_at", startOfThisWeek.toISOString());
+
+        const { count: lastWeekCount } = await supabase
+          .from("fan_follows")
+          .select("*", { count: "exact", head: true })
+          .eq("artist_id", user.id)
+          .not("consented_at", "is", null)
+          .gte("consented_at", startOfLastWeek.toISOString())
+          .lt("consented_at", startOfThisWeek.toISOString());
+
+        // Query the average number of top tracks per fan from fan_spotify_data.
+        // The top_tracks column is a JSON array; its length gives the track count.
+        const { data: spotifyRows } = await supabase
+          .from("fan_spotify_data")
+          .select("top_tracks")
+          .in(
+            "fan_id",
+            (recentFollows ?? []).map(
+              (f: { id: string; consented_at: string }) => f.id,
+            ),
+          );
+
+        let avgTracks = 0;
+        if (spotifyRows && spotifyRows.length > 0) {
+          const totalTracks = spotifyRows.reduce((sum: number, row: any) => {
+            const tracks = row.top_tracks;
+            if (Array.isArray(tracks)) return sum + tracks.length;
+            return sum;
+          }, 0);
+          avgTracks = Math.round(totalTracks / spotifyRows.length);
+        }
+
+        setEngagement({
+          thisWeekFans: thisWeekCount ?? 0,
+          lastWeekFans: lastWeekCount ?? 0,
+          avgTopTracksPerFan: avgTracks,
+        });
       } catch (e) {
         Alert.alert("Error", "Could not load dashboard data.");
       } finally {
@@ -106,39 +306,18 @@ export default function ArtistInsights() {
       }
     }
     fetchData();
-  }, []);
+  }, [buildMilestoneItems]);
 
   const firstName = artistName.split(" ")[0];
 
-  // Dummy stats — replace with aggregated fan_spotify_data queries
-  const DUMMY_PLAYS = 24810;
-  const DUMMY_GROWTH = "+18.4%";
-  const DUMMY_WEEKLY_REPLAY = "47%";
-  const DUMMY_SAVES = "4.2K";
-
-  const DUMMY_TOP_TRACKS = [
-    {
-      rank: "01",
-      title: "Slow Burn",
-      plays: "6,402",
-      change: "+24%",
-      positive: true,
-    },
-    {
-      rank: "02",
-      title: "Paper Lanterns",
-      plays: "4,118",
-      change: "+8%",
-      positive: true,
-    },
-    {
-      rank: "03",
-      title: "Hold Loose",
-      plays: "2,930",
-      change: "-3%",
-      positive: false,
-    },
-  ];
+  // Compute the week-over-week change as a descriptive string.
+  const weekDelta = engagement.thisWeekFans - engagement.lastWeekFans;
+  const weekDeltaLabel =
+    weekDelta > 0
+      ? `+${weekDelta} vs last week`
+      : weekDelta < 0
+        ? `${weekDelta} vs last week`
+        : "same as last week";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -160,82 +339,118 @@ export default function ArtistInsights() {
         {/* Privacy banner */}
         <View style={styles.privacyBanner}>
           <View style={styles.privacyIcon}>
-            <Text style={styles.privacyIconText}>🛡</Text>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={16}
+              color={theme.colors.secondary}
+            />
           </View>
           <Text style={styles.privacyText}>
             Insights from{" "}
             <Text style={styles.privacyBold}>
               {fanCount} {fanCount === 1 ? "fan" : "fans"}
             </Text>{" "}
-            who explicitly chose to share with you. Aggregated only — no
+            who explicitly chose to share with you. Aggregated only -- no
             individual data.
           </Text>
-        </View>
-
-        {/* Plays card */}
-        <View style={styles.playsCard}>
-          <View style={styles.playsHeader}>
-            <Text style={styles.playsLabel}>PLAYS · LAST 30 DAYS</Text>
-            <View style={styles.growthBadge}>
-              <Text style={styles.growthText}>↑ {DUMMY_GROWTH}</Text>
-            </View>
-          </View>
-          <Text style={styles.playsNumber}>{DUMMY_PLAYS.toLocaleString()}</Text>
-          <SparklineChart />
         </View>
 
         {/* Stats row */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>
-              {fanCount > 0 ? `${(fanCount / 1000).toFixed(2)}K` : "—"}
+              {fanCount > 0 ? fanCount : "--"}
             </Text>
             <Text style={styles.statLabel}>CONSENTING FANS</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{DUMMY_WEEKLY_REPLAY}</Text>
-            <Text style={styles.statLabel}>WEEKLY REPLAY</Text>
+            <Text style={styles.statValue}>
+              {engagement.thisWeekFans > 0 ? engagement.thisWeekFans : "--"}
+            </Text>
+            <Text style={styles.statLabel}>NEW THIS WEEK</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{DUMMY_SAVES}</Text>
-            <Text style={styles.statLabel}>SAVES</Text>
+            <Text style={styles.statValue}>
+              {engagement.avgTopTracksPerFan > 0
+                ? engagement.avgTopTracksPerFan
+                : "--"}
+            </Text>
+            <Text style={styles.statLabel}>AVG TRACKS / FAN</Text>
           </View>
         </View>
 
-        {/* Top tracks */}
-        <View style={styles.tracksSection}>
-          <View style={styles.tracksSectionHeader}>
-            <Text style={styles.tracksSectionTitle}>Top tracks</Text>
-            <Text style={styles.seeAll}>SEE ALL</Text>
+        {/* Activity feed section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons
+              name="pulse-outline"
+              size={18}
+              color={theme.colors.darkMuted}
+            />
+            <Text style={styles.sectionTitle}>Activity</Text>
           </View>
 
-          {DUMMY_TOP_TRACKS.map((track) => (
-            <View key={track.rank} style={styles.trackRow}>
-              <Text style={styles.trackRank}>{track.rank}</Text>
-              <View style={styles.trackArt} />
-              <View style={styles.trackInfo}>
-                <Text style={styles.trackTitle}>{track.title}</Text>
-                <Text style={styles.trackPlays}>{track.plays} PLAYS</Text>
-              </View>
-              <Text
-                style={[
-                  styles.trackChange,
-                  track.positive
-                    ? styles.trackChangePos
-                    : styles.trackChangeNeg,
-                ]}
-              >
-                {track.change}
+          {loading ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>Loading activity...</Text>
+            </View>
+          ) : activityItems.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons
+                name="newspaper-outline"
+                size={28}
+                color={theme.colors.darkMuted}
+              />
+              <Text style={styles.emptyStateText}>
+                No recent activity yet. When fans start sharing with you, their
+                activity will appear here.
               </Text>
             </View>
-          ))}
+          ) : (
+            activityItems.map((item) => (
+              <ActivityCard key={item.id} item={item} />
+            ))
+          )}
         </View>
 
-        <View style={styles.dummyNote}>
-          <Text style={styles.dummyNoteText}>
-            * Play counts and track data are placeholder. They will populate
-            once fans stream your music and data is synced.
-          </Text>
+        {/* Fan engagement section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Ionicons
+              name="trending-up-outline"
+              size={18}
+              color={theme.colors.darkMuted}
+            />
+            <Text style={styles.sectionTitle}>Fan engagement</Text>
+          </View>
+
+          <View style={styles.engagementRow}>
+            <EngagementStat
+              label="SHARED THIS WEEK"
+              value={String(engagement.thisWeekFans)}
+              subtext={weekDeltaLabel}
+            />
+            <EngagementStat
+              label="SHARED LAST WEEK"
+              value={String(engagement.lastWeekFans)}
+            />
+          </View>
+
+          <View style={styles.engagementRow}>
+            <EngagementStat
+              label="AVG TOP TRACKS / FAN"
+              value={
+                engagement.avgTopTracksPerFan > 0
+                  ? String(engagement.avgTopTracksPerFan)
+                  : "--"
+              }
+              subtext={
+                engagement.avgTopTracksPerFan > 0
+                  ? "from fan_spotify_data"
+                  : "no data yet"
+              }
+            />
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -291,7 +506,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  privacyIconText: { fontSize: 14 },
   privacyText: {
     flex: 1,
     fontFamily: theme.fonts.sans,
@@ -301,44 +515,6 @@ const styles = StyleSheet.create({
   },
   privacyBold: {
     fontFamily: theme.fonts.sansBold,
-    color: theme.colors.darkText,
-  },
-
-  // Plays card
-  playsCard: {
-    backgroundColor: theme.colors.darkCard,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-  },
-  playsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  playsLabel: {
-    fontFamily: theme.fonts.ui,
-    fontSize: theme.fontSizes.tiny,
-    color: theme.colors.darkMuted,
-    letterSpacing: 0.8,
-  },
-  growthBadge: {
-    backgroundColor: theme.colors.secondary,
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  growthText: {
-    fontFamily: theme.fonts.ui,
-    fontSize: theme.fontSizes.tiny,
-    color: "#FFFFFF",
-    letterSpacing: 0.5,
-  },
-  playsNumber: {
-    fontFamily: theme.fonts.sansBold,
-    fontSize: 40,
-    lineHeight: 48,
     color: theme.colors.darkText,
   },
 
@@ -367,77 +543,42 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // Top tracks
-  tracksSection: { marginBottom: 24 },
-  tracksSectionHeader: {
+  // Sections
+  section: {
+    marginBottom: 28,
+  },
+  sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 14,
   },
-  tracksSectionTitle: {
+  sectionTitle: {
     fontFamily: theme.fonts.sansBoldItalic,
     fontSize: theme.fontSizes.subtitle,
     color: theme.colors.darkText,
   },
-  seeAll: {
-    fontFamily: theme.fonts.ui,
-    fontSize: theme.fontSizes.tiny,
-    color: theme.colors.darkMuted,
-    letterSpacing: 0.8,
-  },
-  trackRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.06)",
-  },
-  trackRank: {
-    fontFamily: theme.fonts.ui,
-    fontSize: theme.fontSizes.small,
-    color: theme.colors.darkMuted,
-    width: 20,
-  },
-  trackArt: {
-    width: 44,
-    height: 44,
-    borderRadius: 6,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  trackInfo: { flex: 1 },
-  trackTitle: {
-    fontFamily: theme.fonts.sansSemiBold,
-    fontSize: theme.fontSizes.body,
-    color: theme.colors.darkText,
-    marginBottom: 3,
-  },
-  trackPlays: {
-    fontFamily: theme.fonts.ui,
-    fontSize: theme.fontSizes.tiny,
-    color: theme.colors.darkMuted,
-    letterSpacing: 0.5,
-  },
-  trackChange: {
-    fontFamily: theme.fonts.sansSemiBold,
-    fontSize: theme.fontSizes.small,
-  },
-  trackChangePos: { color: theme.colors.secondary },
-  trackChangeNeg: { color: theme.colors.danger },
 
-  // Note
-  dummyNote: {
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 10,
-    padding: 12,
+  // Empty state for activity feed
+  emptyState: {
+    backgroundColor: theme.colors.darkCard,
+    borderRadius: 14,
+    padding: 24,
+    alignItems: "center",
+    gap: 10,
   },
-  dummyNoteText: {
+  emptyStateText: {
     fontFamily: theme.fonts.sans,
-    fontSize: theme.fontSizes.tiny,
+    fontSize: theme.fontSizes.small,
     color: theme.colors.darkMuted,
-    lineHeight: 18,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+
+  // Engagement section row
+  engagementRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
   },
 });
