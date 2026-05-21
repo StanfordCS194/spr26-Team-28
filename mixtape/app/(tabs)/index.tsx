@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
+import { timeAgo } from "@/utils/timeAgo";
 
 interface Follow {
   artist_id: string;
@@ -20,6 +21,16 @@ interface Follow {
   profiles: {
     name: string;
     username: string;
+  };
+}
+
+interface Post {
+  id: string;
+  artist_id: string;
+  body: string;
+  created_at: string;
+  profiles: {
+    name: string;
   };
 }
 
@@ -50,8 +61,23 @@ function colorFromId(id: string): string {
 export default function HomeTab() {
   const router = useRouter();
   const [follows, setFollows] = useState<Follow[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [userId, setUserId] = useState<string>("");
   const [loading, setLoading] = useState(false);
+
+  // Toggle visual-only like state for a post.
+  function toggleLike(postId: string) {
+    setLikedPosts((prev) => {
+      const next = new Set(prev);
+      if (next.has(postId)) {
+        next.delete(postId);
+      } else {
+        next.add(postId);
+      }
+      return next;
+    });
+  }
 
   useEffect(() => {
     async function fetchData() {
@@ -74,6 +100,22 @@ export default function HomeTab() {
           return;
         }
         setFollows((data as any) ?? []);
+
+        // Fetch posts from followed artists.
+        const artistIds = ((data as any) ?? []).map(
+          (f: Follow) => f.artist_id,
+        );
+        if (artistIds.length > 0) {
+          const { data: postsData, error: postsError } = await supabase
+            .from("posts")
+            .select("id, artist_id, body, created_at, profiles:artist_id(name)")
+            .in("artist_id", artistIds)
+            .order("created_at", { ascending: false });
+
+          if (!postsError) {
+            setPosts((postsData as any) ?? []);
+          }
+        }
       } finally {
         setLoading(false);
       }
@@ -152,6 +194,63 @@ export default function HomeTab() {
         >
           <Text style={styles.buttonOutlineLabel}>Explore your listening</Text>
         </Pressable>
+
+        {/* Feed from followed artists */}
+        <View style={styles.feedSection}>
+          <Text style={styles.feedLabel}>FROM YOUR ARTISTS</Text>
+
+          {posts.length === 0 && !loading && (
+            <Text style={styles.feedEmpty}>
+              No updates from your artists yet.
+            </Text>
+          )}
+
+          {posts.map((post) => {
+            // Build initials from the artist name.
+            const artistName = (post.profiles as any)?.name ?? "";
+            const initials = artistName
+              .split(" ")
+              .map((w: string) => w[0])
+              .join("")
+              .toUpperCase()
+              .slice(0, 2);
+            const liked = likedPosts.has(post.id);
+
+            return (
+              <View key={post.id} style={styles.feedCard}>
+                <View style={styles.feedCardHeader}>
+                  <View
+                    style={[
+                      styles.feedAvatar,
+                      { backgroundColor: colorFromId(post.artist_id) },
+                    ]}
+                  >
+                    <Text style={styles.feedAvatarText}>{initials}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.feedArtistName}>{artistName}</Text>
+                  </View>
+                  <Text style={styles.feedTimestamp}>
+                    {timeAgo(post.created_at)}
+                  </Text>
+                </View>
+
+                <Text style={styles.feedBody}>{post.body}</Text>
+
+                <Pressable
+                  style={styles.feedLikeButton}
+                  onPress={() => toggleLike(post.id)}
+                >
+                  <Ionicons
+                    name={liked ? "heart" : "heart-outline"}
+                    size={18}
+                    color={liked ? theme.colors.primary : theme.colors.muted}
+                  />
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
 
         {/* What's next */}
         {follows.length > 0 && (
@@ -306,5 +405,71 @@ const styles = StyleSheet.create({
   whatsNextBold: {
     fontFamily: theme.fonts.sansBold,
     color: theme.colors.text,
+  },
+
+  // Feed section
+  feedSection: {
+    marginBottom: 32,
+  },
+  feedLabel: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.muted,
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  feedEmpty: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.muted,
+    lineHeight: 24,
+  },
+  feedCard: {
+    backgroundColor: theme.colors.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  feedCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
+  feedAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  feedAvatarText: {
+    fontFamily: theme.fonts.ui,
+    fontSize: 12,
+    color: "#FFFFFF",
+    letterSpacing: 0.4,
+  },
+  feedArtistName: {
+    fontFamily: theme.fonts.sansBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.text,
+  },
+  feedTimestamp: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.muted,
+  },
+  feedBody: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.text,
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  feedLikeButton: {
+    alignSelf: "flex-start",
+    padding: 4,
   },
 });
