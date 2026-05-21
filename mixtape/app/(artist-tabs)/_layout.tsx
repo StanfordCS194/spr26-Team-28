@@ -35,6 +35,15 @@ export default function ArtistTabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="posts"
+        options={{
+          title: "POSTS",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="megaphone-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="fans"
         options={{
           title: "FANS",
