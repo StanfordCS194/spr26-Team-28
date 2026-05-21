@@ -1,4 +1,5 @@
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -16,6 +17,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
+import Avatar from "@/components/Avatar";
+import useImagePicker from "@/utils/useImagePicker";
 
 const BIG_HIT_SLOP = { top: 12, bottom: 12, left: 16, right: 16 };
 
@@ -46,6 +49,7 @@ type Profile = {
   genre: string | null;
   country: string | null;
   city: string | null;
+  avatar_url: string | null;
 };
 
 type AccountRow = {
@@ -87,6 +91,8 @@ export default function ProfileTab() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const { pickAndUpload, uploading } = useImagePicker();
 
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -118,7 +124,7 @@ export default function ProfileTab() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("name, username, role, bio, genre, country, city")
+        .select("name, username, role, bio, genre, country, city, avatar_url")
         .eq("id", user.id)
         .single<Profile>();
 
@@ -127,7 +133,10 @@ export default function ProfileTab() {
         return;
       }
       if (!mounted.current) return;
-      if (data) setProfile(data);
+      if (data) {
+        setProfile(data);
+        setAvatarUrl(data.avatar_url);
+      }
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not load profile.");
     } finally {
@@ -191,6 +200,13 @@ export default function ProfileTab() {
     }
   }
 
+  async function handleAvatarChange() {
+    const url = await pickAndUpload();
+    if (url && mounted.current) {
+      setAvatarUrl(url);
+    }
+  }
+
   const accounts: AccountRow[] = [
     { key: "spotify", name: "Spotify", handle: email || null, connected: true, brandColor: theme.colors.spotify },
     { key: "apple", name: "Apple Music", handle: null, connected: false, brandColor: "rgba(255,255,255,0.12)" },
@@ -217,7 +233,6 @@ export default function ProfileTab() {
   const artistName = profile?.name ?? "";
   const roleLabel = profile?.role ? capitalize(profile.role) : "Artist";
   const displayName = loading || !artistName ? "Your profile" : artistName;
-  const initials = initialsFromName(artistName);
   const genres = parseGenreTags(profile?.genre ?? null);
   const locationStr = [profile?.city, profile?.country].filter(Boolean).join(", ");
   const metaStr = [genres[0], locationStr].filter(Boolean).join("  ·  ") || "Add your details";
@@ -274,9 +289,32 @@ export default function ProfileTab() {
 
           {/* Identity card */}
           <View style={styles.identityCard}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
+            {editing ? (
+              <Pressable onPress={handleAvatarChange} disabled={uploading}>
+                <View style={styles.avatarWrapper}>
+                  <Avatar
+                    imageUrl={avatarUrl}
+                    name={artistName}
+                    size={64}
+                    dark
+                  />
+                  <View style={styles.cameraOverlay}>
+                    {uploading ? (
+                      <ActivityIndicator size="small" color={theme.colors.darkText} />
+                    ) : (
+                      <Ionicons name="camera" size={18} color={theme.colors.darkText} />
+                    )}
+                  </View>
+                </View>
+              </Pressable>
+            ) : (
+              <Avatar
+                imageUrl={avatarUrl}
+                name={artistName}
+                size={64}
+                dark
+              />
+            )}
             <View style={styles.identityText}>
               {editing ? (
                 <TextInput
@@ -578,6 +616,22 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarWrapper: {
+    position: "relative" as const,
+  },
+  cameraOverlay: {
+    position: "absolute" as const,
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderWidth: 2,
+    borderColor: theme.colors.darkCard,
   },
   avatarText: {
     fontFamily: theme.fonts.sansBold,

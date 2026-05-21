@@ -1,4 +1,5 @@
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -13,6 +14,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
+import Avatar from "@/components/Avatar";
+import useImagePicker from "@/utils/useImagePicker";
 
 interface Profile {
   name: string;
@@ -20,24 +23,13 @@ interface Profile {
   role: string | null;
   country: string | null;
   city: string | null;
+  avatar_url: string | null;
 }
 
 interface SpotifyData {
   top_tracks: any[];
   top_artists: any[];
   fetched_at: string | null;
-}
-
-function initialsFromName(name: string): string {
-  return (
-    name
-      .split(" ")
-      .filter(Boolean)
-      .map((w) => w[0] ?? "")
-      .join("")
-      .slice(0, 2)
-      .toUpperCase() || "?"
-  );
 }
 
 export default function YouTab() {
@@ -48,6 +40,8 @@ export default function YouTab() {
   const [followCount, setFollowCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const { pickAndUpload, uploading } = useImagePicker();
 
   useEffect(() => {
     mounted.current = true;
@@ -63,11 +57,14 @@ export default function YouTab() {
 
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("name, username, role, country, city")
+          .select("name, username, role, country, city, avatar_url")
           .eq("id", user.id)
           .single<Profile>();
 
-        if (profileData && mounted.current) setProfile(profileData);
+        if (profileData && mounted.current) {
+          setProfile(profileData);
+          setAvatarUrl(profileData.avatar_url);
+        }
 
         const { count } = await supabase
           .from("fan_follows")
@@ -111,8 +108,14 @@ export default function YouTab() {
     }
   }
 
+  async function handleAvatarChange() {
+    const url = await pickAndUpload();
+    if (url && mounted.current) {
+      setAvatarUrl(url);
+    }
+  }
+
   const name = profile?.name ?? "";
-  const initials = initialsFromName(name);
   const location = [profile?.city, profile?.country].filter(Boolean).join(", ");
   const topTracks = spotify?.top_tracks?.slice(0, 5) ?? [];
   const topArtists = spotify?.top_artists?.slice(0, 5) ?? [];
@@ -126,9 +129,22 @@ export default function YouTab() {
         <Text style={styles.topLabel}>YOUR PROFILE</Text>
 
         <View style={styles.identityCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
-          </View>
+          <Pressable onPress={handleAvatarChange} disabled={uploading}>
+            <View style={styles.avatarWrapper}>
+              <Avatar
+                imageUrl={avatarUrl}
+                name={name}
+                size={56}
+              />
+              <View style={styles.cameraOverlay}>
+                {uploading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="camera" size={14} color="#fff" />
+                )}
+              </View>
+            </View>
+          </Pressable>
           <View style={styles.identityInfo}>
             <Text style={styles.name}>{loading ? "..." : name || "Fan"}</Text>
             <Text style={styles.username}>@{profile?.username ?? "..."}</Text>
@@ -266,6 +282,22 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarWrapper: {
+    position: "relative" as const,
+  },
+  cameraOverlay: {
+    position: "absolute" as const,
+    bottom: 0,
+    right: 0,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderWidth: 2,
+    borderColor: theme.colors.card,
   },
   avatarText: {
     fontFamily: theme.fonts.sansBold,
