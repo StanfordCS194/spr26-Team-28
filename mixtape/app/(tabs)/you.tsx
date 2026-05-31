@@ -213,6 +213,39 @@ export default function YouTab() {
           </View>
         )}
 
+        {spotify && (
+          <>
+            <Text style={styles.sectionLabel}>SPOTIFY</Text>
+            <View style={styles.listCard}>
+              <View style={[styles.spotifyRow, styles.rowBorder]}>
+                <View style={styles.spotifyLeft}>
+                  <View style={styles.spotifyDot} />
+                  <View>
+                    <Text style={styles.spotifyTitle}>Connected</Text>
+                    <Text style={styles.spotifyMeta}>
+                      Last synced {spotify.fetched_at
+                        ? new Date(spotify.fetched_at).toLocaleDateString("en-US", {
+                            month: "short", day: "numeric",
+                          })
+                        : "recently"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <Pressable
+                style={styles.spotifyRow}
+                onPress={() => router.push("/(sign-in)/connect-music")}
+              >
+                <View style={styles.spotifyLeft}>
+                  <Ionicons name="refresh-outline" size={16} color={theme.colors.muted} />
+                  <Text style={styles.spotifyRefresh}>Re-sync listening data</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={14} color={theme.colors.muted} />
+              </Pressable>
+            </View>
+          </>
+        )}
+
         <Text style={styles.sectionLabel}>ACCOUNT</Text>
         <View style={styles.listCard}>
           <Pressable
@@ -429,5 +462,41 @@ const styles = StyleSheet.create({
   signOutText: {
     fontFamily: theme.fonts.sansSemiBold,
     fontSize: theme.fontSizes.body,
+  },
+
+  spotifyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  spotifyLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  spotifyDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#1DB954",
+  },
+  spotifyTitle: {
+    fontFamily: theme.fonts.sansSemiBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.text,
+  },
+  spotifyMeta: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.muted,
+    marginTop: 2,
+    letterSpacing: 0.3,
+  },
+  spotifyRefresh: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.muted,
   },
 });

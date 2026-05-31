@@ -127,7 +127,13 @@ export default function HomeTab() {
             <View style={styles.divider} />
             <Text style={styles.revokeText}>
               You can pause or revoke this any time from{" "}
-              <Text style={styles.revokeLink}>Sharing</Text>.
+              <Text
+                style={styles.revokeLink}
+                onPress={() => router.push("/(tabs)/sharing")}
+              >
+                Sharing
+              </Text>
+              .
             </Text>
           </View>
         ))}
@@ -149,6 +155,7 @@ export default function HomeTab() {
             styles.buttonOutline,
             pressed && styles.buttonOutlinePressed,
           ]}
+          onPress={() => router.push("/(tabs)/you")}
         >
           <Text style={styles.buttonOutlineLabel}>Explore your listening</Text>
         </Pressable>
