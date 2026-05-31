@@ -5,7 +5,9 @@ import {
   makeRedirectUri,
 } from "expo-auth-session";
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+import { supabase } from "@/database/db";
+
+// Config
 
 const REDIRECT_URI = makeRedirectUri();
 const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID!;
@@ -32,7 +34,7 @@ const ENDPOINTS = {
   recentlyPlayed: "https://api.spotify.com/v1/me/player/recently-played",
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// Types
 
 export interface FanSpotifyData {
   profile: {
@@ -46,7 +48,7 @@ export interface FanSpotifyData {
   recentlyPlayed: SpotifyApi.PlayHistoryObject[];
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+// Hook
 
 export function useSpotifyAuth() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -74,22 +76,22 @@ export function useSpotifyAuth() {
           .then((token) => {
             if (token) {
               setAccessToken(token);
-              console.log("✅ Spotify connected. Access token received.");
+              console.log("Spotify connected. Access token received.");
             } else {
-              console.error("❌ Token exchange returned null.");
+              console.error("Token exchange returned null.");
             }
           })
-          .catch((e) => console.error("❌ Token exchange failed:", e))
+          .catch((e) => console.error("Token exchange failed:", e))
           .finally(() => setLoading(false));
       }
     }
 
     if (response?.type === "error") {
-      console.error("❌ Spotify auth error:", response.error);
+      console.error("Spotify auth error:", response.error);
     }
 
     if (response?.type === "dismiss") {
-      console.log("ℹ️ Spotify auth dismissed by user.");
+      console.log("Spotify auth dismissed by user.");
     }
   }, [response, request]);
 
@@ -99,37 +101,54 @@ export function useSpotifyAuth() {
 
     setLoading(true);
     fetchFanData(accessToken)
-      .then((data) => {
+      .then(async (data) => {
         setFanData(data);
-        console.log("✅ Fan Spotify data fetched successfully.");
+        console.log("Spotify data fetched successfully.");
         console.log(
           "  Profile:",
           data.profile?.display_name,
-          "–",
+          "-",
           data.profile?.country,
         );
         console.log("  Top tracks:", data.topTracks.length);
         console.log("  Top artists:", data.topArtists.length);
         console.log("  Recently played:", data.recentlyPlayed.length);
 
-        // TODO: store fan data in Supabase
-        // await supabase.from("fan_spotify_data").insert({
-        //   fan_id: (await supabase.auth.getUser()).data.user?.id,
-        //   profile: data.profile,
-        //   top_tracks: data.topTracks,
-        //   top_artists: data.topArtists,
-        //   recently_played: data.recentlyPlayed,
-        //   fetched_at: new Date().toISOString(),
-        // });
+        // Persist fan listening data to Supabase so the artist dashboard
+        // and fan profile tab can read it later.
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { error } = await supabase.from("fan_spotify_data").upsert(
+              {
+                fan_id: user.id,
+                profile: data.profile,
+                top_tracks: data.topTracks,
+                top_artists: data.topArtists,
+                recently_played: data.recentlyPlayed,
+                fetched_at: new Date().toISOString(),
+              },
+              { onConflict: "fan_id" },
+            );
+
+            if (error) {
+              console.error("Failed to save Spotify data:", error.message);
+            } else {
+              console.log("Spotify data saved to Supabase.");
+            }
+          }
+        } catch (e: any) {
+          console.error("Failed to persist Spotify data:", e?.message);
+        }
       })
-      .catch((e) => console.error("❌ Failed to fetch fan data:", e))
+      .catch((e) => console.error("Failed to fetch fan data:", e))
       .finally(() => setLoading(false));
   }, [accessToken]);
 
   return { accessToken, fanData, loading, request, promptAsync };
 }
 
-// ─── Token Exchange ───────────────────────────────────────────────────────────
+// Token exchange
 
 async function exchangeCodeForToken(
   code: string,
@@ -153,7 +172,7 @@ async function exchangeCodeForToken(
 
   if (data.error) {
     console.error(
-      "❌ Spotify token error:",
+      "Spotify token error:",
       data.error,
       data.error_description,
     );
@@ -163,7 +182,7 @@ async function exchangeCodeForToken(
   return data.access_token;
 }
 
-// ─── Fan Data Fetching ────────────────────────────────────────────────────────
+// Fan data fetching
 
 async function spotifyGet<T>(url: string, token: string): Promise<T> {
   const res = await fetch(url, {
