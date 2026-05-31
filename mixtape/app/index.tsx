@@ -18,7 +18,7 @@ export default function App() {
   const session = useSession();
 
   if (session) {
-    return <Redirect href="/tabs" />;
+    return <Redirect href="/(tabs)/" />;
   } else if (session === undefined) {
     return <Loading />;
   } else {

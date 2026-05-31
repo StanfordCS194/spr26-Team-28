@@ -1,3 +1,12 @@
+/*
+ * Forgot password screen.
+ *
+ * Sends a Supabase password reset email using the temporary
+ * username-to-dummy-email auth flow.
+ *
+ * TODO: Replace username-based reset with real user emails so reset links
+ * are delivered to actual inboxes.
+ */
 import {
   Alert,
   KeyboardAvoidingView,
@@ -16,26 +25,48 @@ import { useState } from "react";
 
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
+import { friendlyAuthError } from "@/utils/friendlyAuthError";
 
 export default function ForgotPassword() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [usernameFocused, setUsernameFocused] = useState(false);
+  const [usernameError, setUsernameError] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
-  const isDisabled = loading || username.trim().length === 0;
+  const trimmedUsername = username.trim().toLowerCase();
+  const isDisabled = loading || trimmedUsername.length === 0;
 
+  // Send a Supabase password reset email for the entered username.
   async function handleReset() {
-    const trimmedUsername = username.trim().toLowerCase();
+    setUsernameError("");
     setLoading(true);
+
     try {
+      // Check that the username exists before sending a reset email.
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("username", trimmedUsername)
+        .maybeSingle();
+
+      if (profileError) {
+        Alert.alert("Reset failed", friendlyAuthError(profileError.message));
+        return;
+      }
+
+      if (!profile) {
+        setUsernameError("We could not find an account with that username.");
+        return;
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(
-        `${trimmedUsername}@mixtape.com`
+        `${trimmedUsername}@mixtape.com`,
       );
 
       if (error) {
-        Alert.alert("Reset failed", error.message);
+        Alert.alert("Reset failed", friendlyAuthError(error.message));
         return;
       }
 
@@ -51,12 +82,11 @@ export default function ForgotPassword() {
   if (sent) {
     return (
       <SafeAreaView style={styles.container}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <Pressable style={styles.back} onPress={() => router.back()}>
+        <View style={styles.successScreen}>
+          <Pressable
+            style={styles.back}
+            onPress={() => router.replace("/(sign-in)/sign-in")}
+          >
             <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
           </Pressable>
 
@@ -72,7 +102,7 @@ export default function ForgotPassword() {
               account. It may take a minute to arrive.
             </Text>
           </View>
-        </ScrollView>
+        </View>
 
         <View style={styles.footer}>
           <Pressable
@@ -106,7 +136,10 @@ export default function ForgotPassword() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Pressable style={styles.back} onPress={() => router.back()}>
+          <Pressable
+            style={styles.back}
+            onPress={() => router.replace("/(sign-in)/sign-in")}
+          >
             <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
           </Pressable>
 
@@ -119,23 +152,31 @@ export default function ForgotPassword() {
           </View>
 
           <View style={styles.fields}>
-            <View
-              style={[
-                styles.inputWrapper,
-                usernameFocused && styles.inputWrapperFocused,
-              ]}
-            >
-              <Text style={styles.inputLabel}>USERNAME</Text>
-              <TextInput
-                style={styles.input}
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder=""
-                onFocus={() => setUsernameFocused(true)}
-                onBlur={() => setUsernameFocused(false)}
-              />
+            <View>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  usernameFocused && styles.inputWrapperFocused,
+                  usernameError.length > 0 && styles.inputWrapperError,
+                ]}
+              >
+                <Text style={styles.inputLabel}>USERNAME</Text>
+                <TextInput
+                  style={styles.input}
+                  value={username}
+                  onChangeText={(text) => {
+                    setUsername(text);
+                    setUsernameError("");
+                  }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onFocus={() => setUsernameFocused(true)}
+                  onBlur={() => setUsernameFocused(false)}
+                />
+              </View>
+              {usernameError.length > 0 && (
+                <Text style={styles.errorText}>{usernameError}</Text>
+              )}
             </View>
           </View>
 
@@ -177,6 +218,11 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
+  successScreen: {
+    flex: 1,
     paddingHorizontal: 24,
     paddingTop: 8,
   },
@@ -225,6 +271,9 @@ const styles = StyleSheet.create({
   inputWrapperFocused: {
     borderColor: theme.colors.text,
   },
+  inputWrapperError: {
+    borderColor: theme.colors.danger,
+  },
   inputLabel: {
     fontFamily: theme.fonts.sansMedium,
     fontSize: theme.fontSizes.tiny,
@@ -237,6 +286,13 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.subtitle,
     color: theme.colors.text,
     padding: 0,
+  },
+  errorText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.danger,
+    marginTop: 6,
+    marginLeft: 16,
   },
   footer: {
     paddingHorizontal: 24,
@@ -270,6 +326,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 32,
+    paddingBottom: 60,
     gap: 16,
   },
   successTitle: {
