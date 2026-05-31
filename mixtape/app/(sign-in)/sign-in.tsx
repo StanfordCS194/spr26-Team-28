@@ -1,3 +1,13 @@
+/*
+ * Sign-in screen.
+ *
+ * Handles username/password authentication, basic validation, and redirects
+ * users to the correct Fan or Artist experience after sign-in.
+ *
+ * TODO: Replace the temporary username-to-dummy-email auth flow with real
+ * user emails once email validation and Forgot Password are fully supported.
+ */
+
 import {
   Alert,
   KeyboardAvoidingView,
@@ -11,30 +21,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useState } from "react";
 
 import { supabase } from "@/database/db";
 import { navigateByRole } from "@/utils/navigateByRole";
 import theme from "@/assets/theme";
-
-// Map Supabase auth error messages to user-friendly text.
-function friendlyError(message: string): string {
-  const lower = message.toLowerCase();
-  if (lower.includes("invalid login credentials")) {
-    return "Wrong username or password. Please try again.";
-  }
-  if (lower.includes("email not confirmed")) {
-    return "Your account has not been confirmed yet.";
-  }
-  if (lower.includes("user not found")) {
-    return "Account not found. Check your username or create a new account.";
-  }
-  if (lower.includes("too many requests") || lower.includes("rate limit")) {
-    return "Too many attempts. Please wait a moment and try again.";
-  }
-  return message;
-}
+import { friendlyAuthError } from "@/utils/friendlyAuthError";
 
 export default function SignIn() {
   const router = useRouter();
@@ -42,36 +35,34 @@ export default function SignIn() {
   const [password, setPassword] = useState("");
   const [usernameFocused, setUsernameFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Track whether the user has attempted to submit at least once,
-  // so we only show validation errors after the first try.
+  /*
+   * Track whether the user has attempted to submit at least once,
+   * so we only show validation errors after the first try.
+   */
   const [hasAttempted, setHasAttempted] = useState(false);
 
   const usernameEmpty = username.trim().length === 0;
-  const passwordTooShort = password.length > 0 && password.length < 6;
   const passwordEmpty = password.length === 0;
-
+  const passwordTooShort = password.length > 0 && password.length < 6;
   const isDisabled = loading || usernameEmpty || passwordEmpty;
 
+  // Helper function to validate credentials, sign in with Supabase, and route by user role.
   async function signIn() {
     setHasAttempted(true);
-
-    if (usernameEmpty || passwordEmpty) {
-      return;
-    }
-
-    const trimmedUsername = username.trim().toLowerCase();
+    if (usernameEmpty || passwordEmpty) return;
     setLoading(true);
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email: `${trimmedUsername}@mixtape.com`,
+        email: `${username.trim().toLowerCase()}@mixtape.com`,
         password,
       });
 
       if (error) {
-        Alert.alert("Sign in failed", friendlyError(error.message));
+        Alert.alert("Sign in failed", friendlyAuthError(error.message));
         return;
       }
 
@@ -107,6 +98,7 @@ export default function SignIn() {
           </View>
 
           <View style={styles.fields}>
+            {/* Username */}
             <View>
               <View
                 style={[
@@ -122,7 +114,6 @@ export default function SignIn() {
                   onChangeText={setUsername}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  placeholder=""
                   onFocus={() => setUsernameFocused(true)}
                   onBlur={() => setUsernameFocused(false)}
                 />
@@ -132,42 +123,44 @@ export default function SignIn() {
               )}
             </View>
 
+            {/* Password */}
             <View>
               <View
                 style={[
                   styles.inputWrapper,
+                  styles.passwordWrapper,
                   passwordFocused && styles.inputWrapperFocused,
                   hasAttempted && passwordEmpty && styles.inputWrapperError,
                 ]}
               >
                 <Text style={styles.inputLabel}>PASSWORD</Text>
-                <View style={styles.passwordRow}>
-                  <TextInput
-                    style={[styles.input, styles.passwordInput]}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    placeholder=""
-                    onFocus={() => setPasswordFocused(true)}
-                    onBlur={() => setPasswordFocused(false)}
+
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => setPasswordFocused(false)}
+                />
+
+                <Pressable
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword((s) => !s)}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={25}
+                    color={theme.colors.muted}
                   />
-                  <Pressable
-                    onPress={() => setShowPassword(!showPassword)}
-                    hitSlop={8}
-                  >
-                    <Ionicons
-                      name={showPassword ? "eye-off-outline" : "eye-outline"}
-                      size={20}
-                      color={theme.colors.muted}
-                    />
-                  </Pressable>
-                </View>
+                </Pressable>
               </View>
               {hasAttempted && passwordEmpty && (
                 <Text style={styles.errorText}>Password is required.</Text>
               )}
-              {hasAttempted && passwordTooShort && (
+              {passwordTooShort && (
                 <Text style={styles.errorText}>
                   Password must be at least 6 characters.
                 </Text>
@@ -248,6 +241,26 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     backgroundColor: theme.colors.background,
   },
+  passwordWrapper: {
+    position: "relative",
+    paddingRight: 48,
+  },
+  input: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.subtitle,
+    color: theme.colors.text,
+    padding: 0,
+  },
+  passwordInput: {
+    paddingRight: 8,
+  },
+  eyeButton: {
+    position: "absolute",
+    right: 22,
+    bottom: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   inputWrapperFocused: { borderColor: theme.colors.text },
   inputWrapperError: { borderColor: theme.colors.danger },
   inputLabel: {
@@ -257,19 +270,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 4,
   },
-  input: {
-    fontFamily: theme.fonts.sans,
-    fontSize: theme.fontSizes.subtitle,
-    color: theme.colors.text,
-    padding: 0,
-  },
-  passwordRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  passwordInput: {
-    flex: 1,
-  },
+  inputFlex: { flex: 1 },
   errorText: {
     fontFamily: theme.fonts.sans,
     fontSize: theme.fontSizes.small,
@@ -277,10 +278,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginLeft: 16,
   },
-  forgotLink: {
-    alignSelf: "center",
-    marginTop: 20,
-  },
+  forgotLink: { alignSelf: "center", marginTop: 20 },
   forgotText: {
     fontFamily: theme.fonts.sansMedium,
     fontSize: theme.fontSizes.body,
