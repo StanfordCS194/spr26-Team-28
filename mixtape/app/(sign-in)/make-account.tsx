@@ -17,23 +17,54 @@ import { useState } from "react";
 import { supabase as db } from "@/database/db";
 import theme from "@/assets/theme";
 
+const MIN_PASSWORD_LENGTH = 8;
+
+// Check whether the password meets minimum strength requirements.
+function passwordChecks(pw: string) {
+  return {
+    hasMinLength: pw.length >= MIN_PASSWORD_LENGTH,
+    hasNumber: /\d/.test(pw),
+  };
+}
+
 export default function MakeAccount() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [nameFocused, setNameFocused] = useState(false);
   const [usernameFocused, setUsernameFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const [confirmFocused, setConfirmFocused] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [hasAttempted, setHasAttempted] = useState(false);
+
+  const checks = passwordChecks(password);
+  const passwordsMatch = password === confirmPassword;
+  const passwordStrong = checks.hasMinLength && checks.hasNumber;
 
   const isDisabled =
     loading ||
     name.trim().length === 0 ||
     username.trim().length === 0 ||
-    password.length === 0;
+    password.length === 0 ||
+    confirmPassword.length === 0 ||
+    !passwordStrong ||
+    !passwordsMatch;
 
   async function createAccount() {
+    setHasAttempted(true);
+
+    if (!passwordStrong) {
+      return;
+    }
+    if (!passwordsMatch) {
+      return;
+    }
+
     const trimmedUsername = username.trim().toLowerCase();
 
     setLoading(true);
@@ -60,6 +91,24 @@ export default function MakeAccount() {
     }
   }
 
+  // Render a single password requirement line with a check or dot icon.
+  function renderCheck(label: string, met: boolean) {
+    return (
+      <View style={styles.checkRow}>
+        <Ionicons
+          name={met ? "checkmark-circle" : "ellipse-outline"}
+          size={16}
+          color={met ? theme.colors.success : theme.colors.muted}
+        />
+        <Text
+          style={[styles.checkLabel, met && styles.checkLabelMet]}
+        >
+          {label}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -67,7 +116,6 @@ export default function MakeAccount() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        {/* Scrollable content */}
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -86,6 +134,7 @@ export default function MakeAccount() {
           </View>
 
           <View style={styles.fields}>
+            {/* Name field */}
             <View
               style={[
                 styles.inputWrapper,
@@ -104,6 +153,7 @@ export default function MakeAccount() {
               />
             </View>
 
+            {/* Username field */}
             <View
               style={[
                 styles.inputWrapper,
@@ -123,31 +173,93 @@ export default function MakeAccount() {
               />
             </View>
 
-            <View
-              style={[
-                styles.inputWrapper,
-                passwordFocused && styles.inputWrapperFocused,
-              ]}
-            >
-              <Text style={styles.inputLabel}>PASSWORD</Text>
-              <TextInput
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                placeholder=""
-                onFocus={() => setPasswordFocused(true)}
-                onBlur={() => setPasswordFocused(false)}
-              />
+            {/* Password field with show/hide toggle */}
+            <View>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  passwordFocused && styles.inputWrapperFocused,
+                ]}
+              >
+                <Text style={styles.inputLabel}>PASSWORD</Text>
+                <View style={styles.passwordRow}>
+                  <TextInput
+                    style={[styles.input, styles.passwordInput]}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    placeholder=""
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => setPasswordFocused(false)}
+                  />
+                  <Pressable
+                    onPress={() => setShowPassword(!showPassword)}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={showPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color={theme.colors.muted}
+                    />
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Password strength indicator, shown once the user starts typing */}
+              {password.length > 0 && (
+                <View style={styles.strengthBox}>
+                  {renderCheck("At least 8 characters", checks.hasMinLength)}
+                  {renderCheck("Contains a number", checks.hasNumber)}
+                </View>
+              )}
+            </View>
+
+            {/* Confirm password field */}
+            <View>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  confirmFocused && styles.inputWrapperFocused,
+                  hasAttempted &&
+                    confirmPassword.length > 0 &&
+                    !passwordsMatch &&
+                    styles.inputWrapperError,
+                ]}
+              >
+                <Text style={styles.inputLabel}>CONFIRM PASSWORD</Text>
+                <View style={styles.passwordRow}>
+                  <TextInput
+                    style={[styles.input, styles.passwordInput]}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showConfirm}
+                    autoCapitalize="none"
+                    placeholder=""
+                    onFocus={() => setConfirmFocused(true)}
+                    onBlur={() => setConfirmFocused(false)}
+                  />
+                  <Pressable
+                    onPress={() => setShowConfirm(!showConfirm)}
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name={showConfirm ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color={theme.colors.muted}
+                    />
+                  </Pressable>
+                </View>
+              </View>
+              {confirmPassword.length > 0 && !passwordsMatch && (
+                <Text style={styles.errorText}>Passwords do not match.</Text>
+              )}
             </View>
           </View>
 
-          {/* Flex spacer pushes button to bottom naturally */}
           <View style={styles.spacer} />
         </ScrollView>
 
-        {/* Button lives outside ScrollView so it stays pinned above keyboard */}
         <View style={styles.footer}>
           <Pressable
             style={({ pressed }) => [
@@ -237,6 +349,9 @@ const styles = StyleSheet.create({
   inputWrapperFocused: {
     borderColor: theme.colors.text,
   },
+  inputWrapperError: {
+    borderColor: theme.colors.danger,
+  },
   inputLabel: {
     fontFamily: theme.fonts.sansMedium,
     fontSize: theme.fontSizes.tiny,
@@ -249,6 +364,38 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.subtitle,
     color: theme.colors.text,
     padding: 0,
+  },
+  passwordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  passwordInput: {
+    flex: 1,
+  },
+  strengthBox: {
+    marginTop: 10,
+    marginLeft: 16,
+    gap: 4,
+  },
+  checkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  checkLabel: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.muted,
+  },
+  checkLabelMet: {
+    color: theme.colors.success,
+  },
+  errorText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.danger,
+    marginTop: 6,
+    marginLeft: 16,
   },
   button: {
     width: "100%",
