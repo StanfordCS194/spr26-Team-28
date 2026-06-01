@@ -12,7 +12,7 @@ import { Redirect } from "expo-router";
 
 import Loading from "@/components/loading";
 import Login from "@/components/login";
-import useSession from "@/utils/useSession";
+import useSession from "@/utils/hooks/useSession";
 
 export default function App() {
   const session = useSession();

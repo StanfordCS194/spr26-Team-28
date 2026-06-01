@@ -25,7 +25,7 @@ import { useState } from "react";
 
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
-import { friendlyAuthError } from "@/utils/friendlyAuthError";
+import { friendlyAuthError } from "@/utils/functions/friendlyAuthError";
 
 export default function ForgotPassword() {
   const router = useRouter();

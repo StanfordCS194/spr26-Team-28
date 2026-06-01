@@ -9,7 +9,6 @@
  */
 
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -21,13 +20,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 
 import { supabase } from "@/database/db";
-import { navigateByRole } from "@/utils/navigateByRole";
+import { navigateByRole } from "@/utils/functions/navigateByRole";
 import theme from "@/assets/theme";
-import { friendlyAuthError } from "@/utils/friendlyAuthError";
+import { friendlyAuthError } from "@/utils/functions/friendlyAuthError";
 
 export default function SignIn() {
   const router = useRouter();
@@ -43,16 +42,20 @@ export default function SignIn() {
    * so we only show validation errors after the first try.
    */
   const [hasAttempted, setHasAttempted] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const usernameEmpty = username.trim().length === 0;
   const passwordEmpty = password.length === 0;
   const passwordTooShort = password.length > 0 && password.length < 6;
   const isDisabled = loading || usernameEmpty || passwordEmpty;
 
-  // Helper function to validate credentials, sign in with Supabase, and route by user role.
+  // Validate credentials, sign in with Supabase, and route by user role.
   async function signIn() {
     setHasAttempted(true);
+    setFormError("");
+
     if (usernameEmpty || passwordEmpty) return;
+
     setLoading(true);
 
     try {
@@ -62,13 +65,13 @@ export default function SignIn() {
       });
 
       if (error) {
-        Alert.alert("Sign in failed", friendlyAuthError(error.message));
+        setFormError(friendlyAuthError(error.message));
         return;
       }
 
       await navigateByRole(router);
     } catch (error: any) {
-      Alert.alert("Network error", error.message ?? "Something went wrong");
+      setFormError(friendlyAuthError(error?.message ?? ""));
     } finally {
       setLoading(false);
     }
@@ -111,13 +114,17 @@ export default function SignIn() {
                 <TextInput
                   style={styles.input}
                   value={username}
-                  onChangeText={setUsername}
+                  onChangeText={(value) => {
+                    setUsername(value);
+                    setFormError("");
+                  }}
                   autoCapitalize="none"
                   autoCorrect={false}
                   onFocus={() => setUsernameFocused(true)}
                   onBlur={() => setUsernameFocused(false)}
                 />
               </View>
+
               {hasAttempted && usernameEmpty && (
                 <Text style={styles.errorText}>Username is required.</Text>
               )}
@@ -138,7 +145,10 @@ export default function SignIn() {
                 <TextInput
                   style={[styles.input, styles.passwordInput]}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(value) => {
+                    setPassword(value);
+                    setFormError("");
+                  }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   onFocus={() => setPasswordFocused(true)}
@@ -157,9 +167,11 @@ export default function SignIn() {
                   />
                 </Pressable>
               </View>
+
               {hasAttempted && passwordEmpty && (
                 <Text style={styles.errorText}>Password is required.</Text>
               )}
+
               {passwordTooShort && (
                 <Text style={styles.errorText}>
                   Password must be at least 6 characters.
@@ -167,6 +179,10 @@ export default function SignIn() {
               )}
             </View>
           </View>
+
+          {formError.length > 0 && (
+            <Text style={styles.formErrorText}>{formError}</Text>
+          )}
 
           <Pressable
             style={styles.forgotLink}
@@ -204,9 +220,18 @@ export default function SignIn() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  keyboardView: { flex: 1 },
-  scrollContent: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 8 },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
   back: {
     width: 36,
     height: 36,
@@ -216,7 +241,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 24,
   },
-  header: { marginTop: 10, marginBottom: 32 },
+  header: {
+    marginTop: 10,
+    marginBottom: 32,
+  },
   title: {
     fontFamily: theme.fonts.sansBoldItalic,
     fontSize: theme.fontSizes.title,
@@ -230,8 +258,13 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     color: theme.colors.muted,
   },
-  fields: { gap: 30 },
-  spacer: { flex: 1, minHeight: 40 },
+  fields: {
+    gap: 30,
+  },
+  spacer: {
+    flex: 1,
+    minHeight: 40,
+  },
   inputWrapper: {
     borderWidth: 1.5,
     borderColor: theme.colors.border,
@@ -261,8 +294,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  inputWrapperFocused: { borderColor: theme.colors.text },
-  inputWrapperError: { borderColor: theme.colors.danger },
+  inputWrapperFocused: {
+    borderColor: theme.colors.text,
+  },
+  inputWrapperError: {
+    borderColor: theme.colors.danger,
+  },
   inputLabel: {
     fontFamily: theme.fonts.sansMedium,
     fontSize: theme.fontSizes.tiny,
@@ -270,7 +307,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 4,
   },
-  inputFlex: { flex: 1 },
   errorText: {
     fontFamily: theme.fonts.sans,
     fontSize: theme.fontSizes.small,
@@ -278,7 +314,18 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginLeft: 16,
   },
-  forgotLink: { alignSelf: "center", marginTop: 20 },
+  formErrorText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.danger,
+    textAlign: "center",
+    marginTop: 16,
+    paddingHorizontal: 12,
+  },
+  forgotLink: {
+    alignSelf: "center",
+    marginTop: 20,
+  },
   forgotText: {
     fontFamily: theme.fonts.sansMedium,
     fontSize: theme.fontSizes.body,
@@ -300,8 +347,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
-  buttonPressed: { backgroundColor: theme.colors.text },
-  buttonDisabled: { opacity: 0.4 },
+  buttonPressed: {
+    backgroundColor: theme.colors.text,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
   buttonLabel: {
     fontFamily: theme.fonts.ui,
     fontSize: theme.fontSizes.button,

@@ -1,5 +1,14 @@
+/*
+ * Account creation screen.
+ *
+ * Handles new user registration with a temporary username-based Supabase Auth
+ * flow, then sends the user into onboarding.
+ *
+ * TODO: Replace the generated dummy email with real email-based auth once
+ * email sign-up is supported.
+ */
+
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,23 +25,21 @@ import { useState } from "react";
 
 import { supabase as db } from "@/database/db";
 import theme from "@/assets/theme";
-
-const MIN_PASSWORD_LENGTH = 8;
-
-// Check whether the password meets minimum strength requirements.
-function passwordChecks(pw: string) {
-  return {
-    hasMinLength: pw.length >= MIN_PASSWORD_LENGTH,
-    hasNumber: /\d/.test(pw),
-  };
-}
+import {
+  passwordChecks,
+  isPasswordStrong,
+  passwordsMatch,
+} from "@/utils/functions/authValidation";
+import { friendlyAuthError } from "@/utils/functions/friendlyAuthError";
 
 export default function MakeAccount() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [formError, setFormError] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
   const [nameFocused, setNameFocused] = useState(false);
   const [usernameFocused, setUsernameFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
@@ -43,8 +50,8 @@ export default function MakeAccount() {
   const [hasAttempted, setHasAttempted] = useState(false);
 
   const checks = passwordChecks(password);
-  const passwordsMatch = password === confirmPassword;
-  const passwordStrong = checks.hasMinLength && checks.hasNumber;
+  const doPasswordsMatch = passwordsMatch(password, confirmPassword);
+  const passwordStrong = isPasswordStrong(password);
 
   const isDisabled =
     loading ||
@@ -53,24 +60,23 @@ export default function MakeAccount() {
     password.length === 0 ||
     confirmPassword.length === 0 ||
     !passwordStrong ||
-    !passwordsMatch;
+    !doPasswordsMatch;
 
+  // Validate the form, create the Supabase account, and continue onboarding.
   async function createAccount() {
     setHasAttempted(true);
+    setFormError("");
 
-    if (!passwordStrong) {
-      return;
-    }
-    if (!passwordsMatch) {
+    if (!passwordStrong || !doPasswordsMatch) {
       return;
     }
 
     const trimmedUsername = username.trim().toLowerCase();
-
     setLoading(true);
+
     try {
       const generatedEmail = `${trimmedUsername}@mixtape.com`;
-      const { data, error } = await db.auth.signUp({
+      const { error } = await db.auth.signUp({
         email: generatedEmail,
         password,
         options: {
@@ -79,19 +85,24 @@ export default function MakeAccount() {
       });
 
       if (error) {
-        Alert.alert("Sign up failed", error.message);
+        setFormError(friendlyAuthError(error.message));
         return;
       }
 
-      router.push("/(sign-in)/select-account");
+      router.push("/(sign-in)/(onboarding)/select-account");
     } catch (error: any) {
-      Alert.alert("Network error", error.message ?? "Something went wrong");
+      setFormError(friendlyAuthError(error?.message ?? ""));
     } finally {
       setLoading(false);
     }
   }
 
-  // Render a single password requirement line with a check or dot icon.
+  // Clear the form-level error whenever the user edits any field.
+  function clearFormError() {
+    if (formError) setFormError("");
+  }
+
+  // Render a single password requirement with a checked or empty icon.
   function renderCheck(label: string, met: boolean) {
     return (
       <View style={styles.checkRow}>
@@ -100,9 +111,7 @@ export default function MakeAccount() {
           size={16}
           color={met ? theme.colors.success : theme.colors.muted}
         />
-        <Text
-          style={[styles.checkLabel, met && styles.checkLabelMet]}
-        >
+        <Text style={[styles.checkLabel, met && styles.checkLabelMet]}>
           {label}
         </Text>
       </View>
@@ -111,176 +120,200 @@ export default function MakeAccount() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+      <View style={styles.content}>
+        <KeyboardAvoidingView
+          style={styles.keyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
         >
-          <Pressable style={styles.back} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
-          </Pressable>
-
-          <View style={styles.header}>
-            <Text style={styles.title}>Create an Account</Text>
-            <Text style={styles.subtitle}>
-              Begin by choosing a username and password. You will pick whether
-              you are a Fan or Artist next.
-            </Text>
-          </View>
-
-          <View style={styles.fields}>
-            {/* Name field */}
-            <View
-              style={[
-                styles.inputWrapper,
-                nameFocused && styles.inputWrapperFocused,
-              ]}
-            >
-              <Text style={styles.inputLabel}>NAME</Text>
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                autoCorrect={false}
-                placeholder=""
-                onFocus={() => setNameFocused(true)}
-                onBlur={() => setNameFocused(false)}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Pressable style={styles.back} onPress={() => router.back()}>
+              <Ionicons
+                name="chevron-back"
+                size={20}
+                color={theme.colors.text}
               />
+            </Pressable>
+
+            <View style={styles.header}>
+              <Text style={styles.title}>Create an account.</Text>
+              <Text style={styles.subtitle}>
+                Begin by choosing a username and password. You will pick whether
+                you are a Fan or Artist next.
+              </Text>
             </View>
 
-            {/* Username field */}
-            <View
-              style={[
-                styles.inputWrapper,
-                usernameFocused && styles.inputWrapperFocused,
-              ]}
-            >
-              <Text style={styles.inputLabel}>USERNAME</Text>
-              <TextInput
-                style={styles.input}
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder=""
-                onFocus={() => setUsernameFocused(true)}
-                onBlur={() => setUsernameFocused(false)}
-              />
-            </View>
-
-            {/* Password field with show/hide toggle */}
-            <View>
+            <View style={styles.fields}>
+              {/* Name field */}
               <View
                 style={[
                   styles.inputWrapper,
-                  passwordFocused && styles.inputWrapperFocused,
+                  nameFocused && styles.inputWrapperFocused,
                 ]}
               >
-                <Text style={styles.inputLabel}>PASSWORD</Text>
-                <View style={styles.passwordRow}>
+                <Text style={styles.inputLabel}>NAME</Text>
+                <TextInput
+                  style={styles.input}
+                  value={name}
+                  onChangeText={(v) => {
+                    setName(v);
+                    clearFormError();
+                  }}
+                  autoCorrect={false}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => setNameFocused(false)}
+                />
+              </View>
+
+              {/* Username field */}
+              <View
+                style={[
+                  styles.inputWrapper,
+                  usernameFocused && styles.inputWrapperFocused,
+                ]}
+              >
+                <Text style={styles.inputLabel}>USERNAME</Text>
+                <TextInput
+                  style={styles.input}
+                  value={username}
+                  onChangeText={(v) => {
+                    setUsername(v);
+                    clearFormError();
+                  }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onFocus={() => setUsernameFocused(true)}
+                  onBlur={() => setUsernameFocused(false)}
+                />
+              </View>
+
+              {/* Password field with show/hide toggle */}
+              <View>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    styles.passwordWrapper,
+                    passwordFocused && styles.inputWrapperFocused,
+                  ]}
+                >
+                  <Text style={styles.inputLabel}>PASSWORD</Text>
+
                   <TextInput
                     style={[styles.input, styles.passwordInput]}
                     value={password}
-                    onChangeText={setPassword}
+                    onChangeText={(v) => {
+                      setPassword(v);
+                      clearFormError();
+                    }}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
-                    placeholder=""
                     onFocus={() => setPasswordFocused(true)}
                     onBlur={() => setPasswordFocused(false)}
                   />
+
                   <Pressable
-                    onPress={() => setShowPassword(!showPassword)}
+                    style={styles.eyeButton}
+                    onPress={() => setShowPassword((s) => !s)}
                     hitSlop={8}
                   >
                     <Ionicons
                       name={showPassword ? "eye-off-outline" : "eye-outline"}
-                      size={20}
+                      size={25}
                       color={theme.colors.muted}
                     />
                   </Pressable>
                 </View>
+
+                {/* Password strength indicator */}
+                {password.length > 0 && (
+                  <View style={styles.strengthBox}>
+                    {renderCheck("At least 8 characters", checks.hasMinLength)}
+                    {renderCheck("Contains a number", checks.hasNumber)}
+                  </View>
+                )}
               </View>
 
-              {/* Password strength indicator, shown once the user starts typing */}
-              {password.length > 0 && (
-                <View style={styles.strengthBox}>
-                  {renderCheck("At least 8 characters", checks.hasMinLength)}
-                  {renderCheck("Contains a number", checks.hasNumber)}
-                </View>
-              )}
-            </View>
+              {/* Confirm password field */}
+              <View>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    styles.passwordWrapper,
+                    confirmFocused && styles.inputWrapperFocused,
+                    hasAttempted &&
+                      confirmPassword.length > 0 &&
+                      !doPasswordsMatch &&
+                      styles.inputWrapperError,
+                  ]}
+                >
+                  <Text style={styles.inputLabel}>CONFIRM PASSWORD</Text>
 
-            {/* Confirm password field */}
-            <View>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  confirmFocused && styles.inputWrapperFocused,
-                  hasAttempted &&
-                    confirmPassword.length > 0 &&
-                    !passwordsMatch &&
-                    styles.inputWrapperError,
-                ]}
-              >
-                <Text style={styles.inputLabel}>CONFIRM PASSWORD</Text>
-                <View style={styles.passwordRow}>
                   <TextInput
                     style={[styles.input, styles.passwordInput]}
                     value={confirmPassword}
-                    onChangeText={setConfirmPassword}
+                    onChangeText={(v) => {
+                      setConfirmPassword(v);
+                      clearFormError();
+                    }}
                     secureTextEntry={!showConfirm}
                     autoCapitalize="none"
-                    placeholder=""
                     onFocus={() => setConfirmFocused(true)}
                     onBlur={() => setConfirmFocused(false)}
                   />
+
                   <Pressable
-                    onPress={() => setShowConfirm(!showConfirm)}
+                    style={styles.eyeButton}
+                    onPress={() => setShowConfirm((s) => !s)}
                     hitSlop={8}
                   >
                     <Ionicons
                       name={showConfirm ? "eye-off-outline" : "eye-outline"}
-                      size={20}
+                      size={25}
                       color={theme.colors.muted}
                     />
                   </Pressable>
                 </View>
+
+                {confirmPassword.length > 0 && !doPasswordsMatch && (
+                  <Text style={styles.errorText}>Passwords do not match.</Text>
+                )}
               </View>
-              {confirmPassword.length > 0 && !passwordsMatch && (
-                <Text style={styles.errorText}>Passwords do not match.</Text>
-              )}
             </View>
-          </View>
 
-          <View style={styles.spacer} />
-        </ScrollView>
+            {formError.length > 0 && (
+              <Text style={styles.formErrorText}>{formError}</Text>
+            )}
 
-        <View style={styles.footer}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.button,
-              pressed && !isDisabled && styles.buttonPressed,
-              isDisabled && styles.buttonDisabled,
-            ]}
-            onPress={createAccount}
-            disabled={isDisabled}
-          >
-            <Ionicons
-              name="person-add-outline"
-              size={18}
-              color={theme.colors.darkText}
-            />
-            <Text style={styles.buttonLabel}>
-              {loading ? "Creating account..." : "Create account"}
-            </Text>
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
+            <View style={styles.spacer} />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+
+      <View style={styles.footer}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.button,
+            pressed && !isDisabled && styles.buttonPressed,
+            isDisabled && styles.buttonDisabled,
+          ]}
+          onPress={createAccount}
+          disabled={isDisabled}
+        >
+          <Ionicons
+            name="person-add-outline"
+            size={18}
+            color={theme.colors.darkText}
+          />
+          <Text style={styles.buttonLabel}>
+            {loading ? "Creating account..." : "Create account"}
+          </Text>
+        </Pressable>
+      </View>
     </SafeAreaView>
   );
 }
@@ -290,13 +323,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  content: {
+    flex: 1,
+  },
   keyboardView: {
     flex: 1,
   },
+  scroll: {
+    flex: 1,
+  },
   scrollContent: {
-    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 8,
+    paddingBottom: 24,
   },
   back: {
     width: 36,
@@ -328,7 +367,6 @@ const styles = StyleSheet.create({
     gap: 30,
   },
   spacer: {
-    flex: 1,
     minHeight: 40,
   },
   footer: {
@@ -345,6 +383,10 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 12,
     backgroundColor: theme.colors.background,
+  },
+  passwordWrapper: {
+    position: "relative",
+    paddingRight: 48,
   },
   inputWrapperFocused: {
     borderColor: theme.colors.text,
@@ -365,12 +407,15 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     padding: 0,
   },
-  passwordRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
   passwordInput: {
-    flex: 1,
+    paddingRight: 8,
+  },
+  eyeButton: {
+    position: "absolute",
+    right: 22,
+    bottom: 22,
+    alignItems: "center",
+    justifyContent: "center",
   },
   strengthBox: {
     marginTop: 10,
@@ -396,6 +441,14 @@ const styles = StyleSheet.create({
     color: theme.colors.danger,
     marginTop: 6,
     marginLeft: 16,
+  },
+  formErrorText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.danger,
+    textAlign: "center",
+    marginTop: 16,
+    paddingHorizontal: 12,
   },
   button: {
     width: "100%",
