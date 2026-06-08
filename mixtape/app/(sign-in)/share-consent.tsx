@@ -72,12 +72,17 @@ export default function ShareConsent() {
         return;
       }
 
-      const { error } = await supabase.from("fan_follows").upsert({
-        fan_id: user.id,
-        artist_id: artistId,
-        consented_at: new Date().toISOString(),
-        top_track: topTrack || null,
-      });
+      const { error } = await supabase.from("fan_follows").upsert(
+        {
+          fan_id: user.id,
+          artist_id: artistId,
+          consented_at: new Date().toISOString(),
+          top_track: topTrack || null,
+        },
+        // Re-consenting updates the existing row instead of inserting a
+        // duplicate (relies on the UNIQUE(fan_id, artist_id) constraint).
+        { onConflict: "fan_id,artist_id" },
+      );
 
       if (error) {
         Alert.alert("Error", error.message);
