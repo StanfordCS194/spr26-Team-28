@@ -110,6 +110,42 @@ create index if not exists releases_artist_id_idx on public.releases (artist_id)
 
 
 -- ----------------------------------------------------------------------------
+-- Reconcile pre-existing tables
+-- ----------------------------------------------------------------------------
+-- The "create table if not exists" statements above are a no-op on a database
+-- that already has an older version of one of these tables, so any newer column
+-- (e.g. profiles.genre, which the collaborate and profile screens query) would
+-- be missing and queries would fail with "column ... does not exist". These
+-- add-column statements bring an existing table up to date. Every column added
+-- here is nullable or has a default, so they are safe to run against a table
+-- that already holds rows, and "if not exists" keeps the whole script
+-- idempotent.
+alter table public.profiles
+  add column if not exists bio       text,
+  add column if not exists genre     text,
+  add column if not exists city      text,
+  add column if not exists country   text,
+  add column if not exists instagram text,
+  add column if not exists tiktok    text,
+  add column if not exists website   text;
+
+alter table public.fan_follows
+  add column if not exists consented_at timestamptz,
+  add column if not exists top_track    text;
+
+alter table public.fan_spotify_data
+  add column if not exists profile         jsonb,
+  add column if not exists top_tracks      jsonb not null default '[]'::jsonb,
+  add column if not exists top_artists     jsonb not null default '[]'::jsonb,
+  add column if not exists recently_played jsonb not null default '[]'::jsonb,
+  add column if not exists fetched_at      timestamptz not null default now();
+
+alter table public.releases
+  add column if not exists release_date date,
+  add column if not exists track_count  integer not null default 0;
+
+
+-- ----------------------------------------------------------------------------
 -- updated_at maintenance (profiles)
 -- ----------------------------------------------------------------------------
 create or replace function public.set_updated_at()

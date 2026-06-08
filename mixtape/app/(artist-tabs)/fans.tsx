@@ -214,9 +214,17 @@ function buildMapHTML(data: CityData[]): string {
 const COLLAPSED_H = 52;
 const EXPANDED_H  = 340;
 
-function TopCitiesPanel({ data }: { data: CityData[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const animH = useRef(new Animated.Value(COLLAPSED_H)).current;
+function TopCitiesPanel({
+  data,
+  initiallyExpanded = false,
+}: {
+  data: CityData[];
+  initiallyExpanded?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const animH = useRef(
+    new Animated.Value(initiallyExpanded ? EXPANDED_H : COLLAPSED_H)
+  ).current;
 
   function toggle() {
     Animated.spring(animH, {
@@ -427,6 +435,16 @@ export default function FansTab() {
         <View style={styles.centered}>
           <Text style={styles.centeredText}>⚠ {error}</Text>
         </View>
+      ) : Platform.OS === "web" ? (
+        // react-native-webview has no web implementation, so the Leaflet map
+        // can't render in the browser build. Show the cities list instead.
+        <View style={[styles.map, styles.webFallback]}>
+          <Ionicons name="map-outline" size={40} color={theme.colors.darkMuted} />
+          <Text style={styles.webFallbackText}>
+            The interactive listener map runs on iOS and Android. Your cities are
+            listed below.
+          </Text>
+        </View>
       ) : (
         <WebView
           style={styles.map}
@@ -439,7 +457,9 @@ export default function FansTab() {
       )}
 
       {/* Expandable top cities panel (replaces legend) */}
-      {!loading && !error && <TopCitiesPanel data={mapData} />}
+      {!loading && !error && (
+        <TopCitiesPanel data={mapData} initiallyExpanded={Platform.OS === "web"} />
+      )}
 
       {/* City detail modal */}
       <Modal
@@ -538,6 +558,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   map: { flex: 1 },
+  webFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 14,
+    paddingHorizontal: 32,
+  },
+  webFallbackText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.darkMuted,
+    textAlign: "center",
+    lineHeight: 22,
+  },
   centered: {
     flex: 1,
     alignItems: "center",
