@@ -1,3 +1,11 @@
+/*
+ * Artist RELEASES tab.
+ *
+ * Lists the signed-in artist's releases (from the `releases` table) and lets
+ * them add a new single/EP/album with a title, type, and track count. The
+ * screen degrades gracefully if the `releases` table does not exist yet.
+ */
+
 import {
   Alert,
   Pressable,
@@ -50,6 +58,14 @@ export default function ReleasesTab() {
   // New release form fields.
   const [newTitle, setNewTitle] = useState("");
   const [newType, setNewType] = useState<"single" | "ep" | "album">("single");
+  const [newTracks, setNewTracks] = useState("1");
+
+  function resetForm() {
+    setNewTitle("");
+    setNewType("single");
+    setNewTracks("1");
+    setAdding(false);
+  }
 
   useEffect(() => {
     mounted.current = true;
@@ -89,13 +105,22 @@ export default function ReleasesTab() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Use the entered track count; fall back to 1 for singles, 0 otherwise.
+      const parsedTracks = parseInt(newTracks, 10);
+      const trackCount =
+        Number.isFinite(parsedTracks) && parsedTracks > 0
+          ? parsedTracks
+          : newType === "single"
+            ? 1
+            : 0;
+
       const { data, error } = await supabase
         .from("releases")
         .insert({
           artist_id: user.id,
           title: newTitle.trim(),
           release_type: newType,
-          track_count: newType === "single" ? 1 : 0,
+          track_count: trackCount,
         })
         .select()
         .single();
@@ -107,9 +132,7 @@ export default function ReleasesTab() {
       if (data && mounted.current) {
         setReleases((prev) => [data as Release, ...prev]);
       }
-      setNewTitle("");
-      setNewType("single");
-      setAdding(false);
+      resetForm();
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not save release.");
     } finally {
@@ -169,10 +192,21 @@ export default function ReleasesTab() {
               ))}
             </View>
 
+            <Text style={[styles.formLabel, { marginTop: 14 }]}>TRACKS</Text>
+            <TextInput
+              style={styles.formInput}
+              value={newTracks}
+              onChangeText={(t) => setNewTracks(t.replace(/[^0-9]/g, ""))}
+              placeholder="Number of tracks"
+              placeholderTextColor={theme.colors.darkMuted}
+              keyboardType="number-pad"
+              maxLength={3}
+            />
+
             <View style={styles.formActions}>
               <Pressable
                 style={styles.formCancel}
-                onPress={() => { setAdding(false); setNewTitle(""); }}
+                onPress={resetForm}
               >
                 <Text style={styles.formCancelText}>Cancel</Text>
               </Pressable>

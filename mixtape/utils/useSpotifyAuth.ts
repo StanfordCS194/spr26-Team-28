@@ -1,3 +1,13 @@
+/*
+ * Spotify OAuth + listening-data hook.
+ *
+ * Drives the Spotify Authorization Code (PKCE) flow via expo-auth-session,
+ * exchanges the code for an access token, fetches the fan's profile, top
+ * tracks, top artists, and recently played, and persists that snapshot to the
+ * `fan_spotify_data` table. See REDIRECT_URI below for the redirect-URI config
+ * that the Spotify dashboard must match (issue #30).
+ */
+
 import { useEffect, useState } from "react";
 import {
   useAuthRequest,
@@ -9,11 +19,32 @@ import { supabase } from "@/database/db";
 
 // Config
 
-const REDIRECT_URI = makeRedirectUri();
+/*
+ * Spotify requires the redirect URI to EXACTLY match one of the URIs registered
+ * in the Spotify Developer Dashboard. A bare `makeRedirectUri()` derives the URI
+ * from the local Expo dev-server address (e.g. exp://192.168.1.5:8081), which
+ * changes between machines, networks, and runs — causing "INVALID_CLIENT: Invalid
+ * redirect URI" errors (see issue #30).
+ *
+ * To make the redirect stable we, in order of preference:
+ *   1. Use EXPO_PUBLIC_SPOTIFY_REDIRECT_URI when set. Put the exact value you
+ *      registered in the Spotify dashboard here (e.g. a deployed https callback
+ *      or "mixtape://spotify-auth-callback").
+ *   2. Otherwise derive a deterministic URI from the app's own custom scheme
+ *      ("mixtape", declared in app.json), yielding "mixtape://spotify-auth-callback".
+ *      This is stable across runs/devices in a dev or production build.
+ *
+ * Whichever value this resolves to MUST be added to the app's Redirect URIs in
+ * the Spotify Developer Dashboard. Log it once on startup so it is easy to copy.
+ */
+const REDIRECT_URI =
+  process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ??
+  makeRedirectUri({ scheme: "mixtape", path: "spotify-auth-callback" });
 const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID!;
 
-console.log("Redirect URI:", REDIRECT_URI);
-console.log("Client ID:", CLIENT_ID);
+if (__DEV__) {
+  console.log("[Spotify] Redirect URI (register this in the dashboard):", REDIRECT_URI);
+}
 
 const SCOPES = [
   "user-read-email",

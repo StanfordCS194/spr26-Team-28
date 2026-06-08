@@ -1,3 +1,10 @@
+/*
+ * Central design tokens for the app: colors, fonts, font sizes/weights, and
+ * border radii. Import this everywhere instead of hardcoding values so the fan
+ * (light) and artist (dark) surfaces stay visually consistent and themeable
+ * from one place.
+ */
+
 const theme = {
   statusBar: "dark-content" as const,
   colors: {

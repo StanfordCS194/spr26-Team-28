@@ -35,7 +35,7 @@ export default function Login() {
               styles.button,
               pressed && styles.buttonPressed,
             ]}
-            onPress={() => router.push("/make-account")}
+            onPress={() => router.push("/(sign-in)/make-account")}
           >
             {({ pressed }) => (
               <>
@@ -67,7 +67,7 @@ export default function Login() {
               styles.buttonOutline,
               pressed && styles.buttonOutlinePressed,
             ]}
-            onPress={() => router.push("/sign-in")}
+            onPress={() => router.push("/(sign-in)/sign-in")}
           >
             {({ pressed }) => (
               <>
