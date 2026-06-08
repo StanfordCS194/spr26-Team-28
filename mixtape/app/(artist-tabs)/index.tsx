@@ -12,62 +12,96 @@ interface Profile {
 
 interface TrackTally {
   name: string;
-  artists: string;
   count: number;
+  growthPct: number | null;
 }
 
-interface ArtistTally {
-  name: string;
-  count: number;
-}
-
-function SparklineChart({ points }: { points: number[] }) {
-  if (points.length < 2) return null;
-  const max = Math.max(...points);
-  const min = Math.min(...points);
+function ListenerChart({ points }: { points: { label: string; count: number }[] }) {
+  if (points.length < 2) return <View style={{ height: 100, marginTop: 16 }} />;
+  const max = Math.max(...points.map((p) => p.count));
+  const min = Math.min(...points.map((p) => p.count));
   const range = max - min || 1;
 
   return (
     <View style={chartStyles.container}>
-      {points.map((val, i) => (
-        <View
-          key={i}
-          style={[
-            chartStyles.dot,
-            {
-              left: `${(i / (points.length - 1)) * 100}%`,
-              bottom: `${((val - min) / range) * 100}%`,
-            },
-          ]}
-        />
-      ))}
-      <View style={chartStyles.line} />
+      <View style={chartStyles.plotArea}>
+        {points.map((p, i) => (
+          <View
+            key={i}
+            style={[
+              chartStyles.dot,
+              {
+                left: `${(i / (points.length - 1)) * 100}%`,
+                bottom: `${((p.count - min) / range) * 100}%`,
+              },
+            ]}
+          >
+            <View style={chartStyles.dotInner} />
+          </View>
+        ))}
+      </View>
+      <View style={chartStyles.baseline} />
+      <View style={chartStyles.labelsRow}>
+        {points.map((p, i) =>
+          i === 0 || i === points.length - 1 || i === Math.floor(points.length / 2) ? (
+            <Text
+              key={i}
+              style={[
+                chartStyles.barLabel,
+                { position: "absolute", left: `${(i / (points.length - 1)) * 100}%` },
+              ]}
+            >
+              {p.label}
+            </Text>
+          ) : null
+        )}
+      </View>
     </View>
   );
 }
 
 const chartStyles = StyleSheet.create({
   container: {
-    height: 80,
+    width: "100%",
+    marginTop: 16,
+  },
+  plotArea: {
+    height: 70,
     width: "100%",
     position: "relative",
-    marginTop: 16,
-    overflow: "hidden",
   },
   dot: {
     position: "absolute",
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colors.secondary,
+    width: 10,
+    height: 10,
+    marginLeft: -5,
+    marginBottom: -5,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  line: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 2,
-    backgroundColor: "rgba(66,129,164,0.3)",
+  dotInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.colors.secondary,
+    opacity: 0.9,
+  },
+  baseline: {
+    height: 1,
+    width: "100%",
+    backgroundColor: "rgba(66,129,164,0.35)",
+  },
+  labelsRow: {
+    height: 18,
+    width: "100%",
+    position: "relative",
+    marginTop: 4,
+  },
+  barLabel: {
+    fontFamily: theme.fonts.ui,
+    fontSize: 8,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.3,
   },
 });
 
@@ -81,9 +115,9 @@ export default function ArtistInsights() {
   const mounted = useRef(true);
   const [artistName, setArtistName] = useState("");
   const [fanCount, setFanCount] = useState(0);
+  const [cityCount, setCityCount] = useState(0);
+  const [consentedDates, setConsentedDates] = useState<string[]>([]);
   const [topTracks, setTopTracks] = useState<TrackTally[]>([]);
-  const [topArtists, setTopArtists] = useState<ArtistTally[]>([]);
-  const [totalPlays, setTotalPlays] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -109,34 +143,36 @@ export default function ArtistInsights() {
 
       if (profile && mounted.current) setArtistName((profile as Profile).name);
 
-      const { count } = await supabase
+      const { data: followRows } = await supabase
         .from("fan_follows")
-        .select("*", { count: "exact", head: true })
+        .select("consented_at, fan_id, top_track")
         .eq("artist_id", user.id)
-        .not("consented_at", "is", null);
+        .not("consented_at", "is", null)
+        .order("consented_at", { ascending: true });
 
-      if (mounted.current) setFanCount(count ?? 0);
-
-      // Pull Spotify data from all consenting fans to aggregate.
-      const { data: follows } = await supabase
-        .from("fan_follows")
-        .select("fan_id")
-        .eq("artist_id", user.id)
-        .not("consented_at", "is", null);
-
-      if (!follows?.length) {
+      if (!followRows) {
         if (mounted.current) setLoading(false);
         return;
       }
 
-      const fanIds = follows.map((f: any) => f.fan_id);
-      const { data: spotifyRows } = await supabase
-        .from("fan_spotify_data")
-        .select("top_tracks, top_artists, recently_played")
-        .in("fan_id", fanIds);
+      if (mounted.current) {
+        setFanCount(followRows.length);
+        setConsentedDates(followRows.map((r: any) => r.consented_at));
+        setTopTracks(buildTopTracks(followRows));
+      }
 
-      if (spotifyRows && mounted.current) {
-        aggregateFanData(spotifyRows);
+      const fanIds = followRows.map((f: any) => f.fan_id);
+
+      const { data: profileRows } = await supabase
+        .from("profiles")
+        .select("city")
+        .in("id", fanIds);
+
+      if (mounted.current && profileRows) {
+        const uniqueCities = new Set(
+          profileRows.map((p: any) => p.city).filter(Boolean)
+        );
+        setCityCount(uniqueCities.size);
       }
     } catch (e) {
       if (mounted.current) Alert.alert("Error", "Could not load dashboard data.");
@@ -145,57 +181,63 @@ export default function ArtistInsights() {
     }
   }
 
-  function aggregateFanData(rows: any[]) {
-    const trackCounts: Record<string, TrackTally> = {};
-    const artistCounts: Record<string, ArtistTally> = {};
-    let plays = 0;
+  function buildTopTracks(rows: any[]): TrackTally[] {
+    const now = new Date();
+    const lastMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, "0")}`;
 
+    const allTime: Record<string, number> = {};
     for (const row of rows) {
-      const tracks = row.top_tracks ?? [];
-      for (const t of tracks) {
-        const key = t.id ?? t.name;
-        if (!trackCounts[key]) {
-          trackCounts[key] = {
-            name: t.name,
-            artists: t.artists?.map((a: any) => a.name).join(", ") ?? "",
-            count: 0,
-          };
-        }
-        trackCounts[key].count += 1;
-      }
-
-      const artists = row.top_artists ?? [];
-      for (const a of artists) {
-        const key = a.id ?? a.name;
-        if (!artistCounts[key]) {
-          artistCounts[key] = { name: a.name, count: 0 };
-        }
-        artistCounts[key].count += 1;
-      }
-
-      plays += (row.recently_played ?? []).length;
+      const track = row.top_track;
+      if (!track) continue;
+      allTime[track] = (allTime[track] ?? 0) + 1;
     }
 
-    const sortedTracks = Object.values(trackCounts)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
+    return Object.entries(allTime)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => {
+        const prevTotal = rows.filter(
+          (r: any) => r.top_track === name && r.consented_at.slice(0, 7) <= lastMonth
+        ).length;
 
-    const sortedArtists = Object.values(artistCounts)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
+        const growthPct =
+          prevTotal === 0
+            ? null
+            : Math.round(((count - prevTotal) / prevTotal) * 100);
 
-    setTopTracks(sortedTracks);
-    setTopArtists(sortedArtists);
-    setTotalPlays(plays);
+        return { name, count, growthPct };
+      });
+  }
+
+  function buildListenerPoints(dates: string[]): { label: string; count: number }[] {
+    if (!dates.length) return [];
+    const buckets: Record<string, number> = {};
+    for (const d of dates) {
+      const key = d.slice(0, 7);
+      buckets[key] = (buckets[key] ?? 0) + 1;
+    }
+    const sorted = Object.keys(buckets).sort();
+    let cumulative = 0;
+    return sorted.map((k) => {
+      cumulative += buckets[k];
+      const [year, month] = k.split("-");
+      const label = new Date(+year, +month - 1).toLocaleString("default", { month: "short" });
+      return { label, count: cumulative };
+    });
   }
 
   const firstName = artistName.split(" ")[0];
-  const hasData = topTracks.length > 0 || topArtists.length > 0 || totalPlays > 0;
+  const listenerPoints = buildListenerPoints(consentedDates);
+  const hasData = topTracks.length > 0;
 
-  // Build sparkline from track frequency distribution.
-  const sparklinePoints = topTracks.length >= 2
-    ? topTracks.map((t) => t.count)
-    : [0, 0, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
+  const growthDisplay = (() => {
+    if (listenerPoints.length < 2) return "--";
+    const prev = listenerPoints[listenerPoints.length - 2].count;
+    const curr = listenerPoints[listenerPoints.length - 1].count;
+    if (prev === 0) return "--";
+    const pct = Math.round(((curr - prev) / prev) * 100);
+    return `${pct >= 0 ? "+" : ""}${pct}%`;
+  })();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -210,7 +252,6 @@ export default function ArtistInsights() {
               Hey, {loading ? "..." : firstName}.
             </Text>
           </View>
-          <View style={styles.avatar} />
         </View>
 
         <View style={styles.privacyBanner}>
@@ -229,21 +270,17 @@ export default function ArtistInsights() {
 
         <View style={styles.playsCard}>
           <View style={styles.playsHeader}>
-            <Text style={styles.playsLabel}>
-              {hasData ? "FAN LISTENING ACTIVITY" : "PLAYS - LAST 30 DAYS"}
-            </Text>
-            {totalPlays > 0 && (
+            <Text style={styles.playsLabel}>LISTENER GROWTH</Text>
+            {fanCount > 0 && (
               <View style={styles.growthBadge}>
                 <Text style={styles.growthText}>
-                  {fanCount} {fanCount === 1 ? "source" : "sources"}
+                  {fanCount} {fanCount === 1 ? "fan" : "fans"}
                 </Text>
               </View>
             )}
           </View>
-          <Text style={styles.playsNumber}>
-            {hasData ? formatNumber(totalPlays) : "--"}
-          </Text>
-          <SparklineChart points={sparklinePoints} />
+          <Text style={styles.playsNumber}>{growthDisplay}</Text>
+          <ListenerChart points={listenerPoints} />
         </View>
 
         <View style={styles.statsRow}>
@@ -259,9 +296,9 @@ export default function ArtistInsights() {
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>
-              {topArtists.length > 0 ? topArtists.length : "--"}
+              {cityCount > 0 ? cityCount : "--"}
             </Text>
-            <Text style={styles.statLabel}>RELATED{"\n"}ARTISTS</Text>
+            <Text style={styles.statLabel}>CITIES{"\n"}REACHED</Text>
           </View>
         </View>
 
@@ -276,43 +313,24 @@ export default function ArtistInsights() {
                 <Text style={styles.trackRank}>
                   {String(i + 1).padStart(2, "0")}
                 </Text>
-                <View style={styles.trackArt} />
                 <View style={styles.trackInfo}>
                   <Text style={styles.trackTitle} numberOfLines={1}>
                     {track.name}
                   </Text>
                   <Text style={styles.trackPlays}>
-                    {track.artists ? track.artists : `${track.count} fans`}
+                    {track.count} {track.count === 1 ? "listener" : "listeners"}
                   </Text>
                 </View>
-                <Text style={styles.fanBadge}>
-                  {track.count} {track.count === 1 ? "fan" : "fans"}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {topArtists.length > 0 && (
-          <View style={styles.tracksSection}>
-            <View style={styles.tracksSectionHeader}>
-              <Text style={styles.tracksSectionTitle}>Artists your fans listen to</Text>
-            </View>
-
-            {topArtists.map((artist, i) => (
-              <View key={artist.name + i} style={styles.trackRow}>
-                <Text style={styles.trackRank}>
-                  {String(i + 1).padStart(2, "0")}
-                </Text>
-                <View style={[styles.trackArt, { borderRadius: 22 }]} />
-                <View style={styles.trackInfo}>
-                  <Text style={styles.trackTitle} numberOfLines={1}>
-                    {artist.name}
+                {track.growthPct !== null ? (
+                  <Text style={[
+                    styles.fanBadge,
+                    track.growthPct < 0 && { color: "#FF5050" },
+                  ]}>
+                    {track.growthPct >= 0 ? "+" : ""}{track.growthPct}%
                   </Text>
-                </View>
-                <Text style={styles.fanBadge}>
-                  {artist.count} {artist.count === 1 ? "fan" : "fans"}
-                </Text>
+                ) : (
+                  <Text style={styles.fanBadgeNew}>new</Text>
+                )}
               </View>
             ))}
           </View>
@@ -323,8 +341,7 @@ export default function ArtistInsights() {
             <Ionicons name="analytics-outline" size={28} color={theme.colors.darkMuted} />
             <Text style={styles.emptyTitle}>Waiting for fan data</Text>
             <Text style={styles.emptyText}>
-              Once fans connect their Spotify and share with you, their
-              aggregated listening patterns will appear here.
+              Once fans share with you, their aggregated listening patterns will appear here.
             </Text>
           </View>
         )}
@@ -355,12 +372,6 @@ const styles = StyleSheet.create({
     fontSize: 32,
     lineHeight: 38,
     color: theme.colors.darkText,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: theme.colors.primary,
   },
 
   privacyBanner: {
@@ -479,14 +490,6 @@ const styles = StyleSheet.create({
     color: theme.colors.darkMuted,
     width: 20,
   },
-  trackArt: {
-    width: 44,
-    height: 44,
-    borderRadius: 6,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
   trackInfo: { flex: 1 },
   trackTitle: {
     fontFamily: theme.fonts.sansSemiBold,
@@ -504,6 +507,12 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.ui,
     fontSize: theme.fontSizes.tiny,
     color: theme.colors.secondary,
+    letterSpacing: 0.3,
+  },
+  fanBadgeNew: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.darkMuted,
     letterSpacing: 0.3,
   },
 

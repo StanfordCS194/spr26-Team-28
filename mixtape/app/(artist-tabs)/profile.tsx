@@ -63,7 +63,7 @@ function initialsFromName(name: string): string {
       .map((w) => w[0] ?? "")
       .join("")
       .slice(0, 2)
-      .toUpperCase() || "?"
+      .toUpperCase()
   );
 }
 
@@ -106,21 +106,26 @@ export default function ProfileTab() {
   }, []);
 
   useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session) loadProfile();
+      }
+    );
     loadProfile();
+    return () => subscription.unsubscribe();
   }, []);
 
   async function loadProfile() {
     setLoading(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || !mounted.current) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) return;
       setEmail(user.email ?? "");
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("name, username, role, bio, genre, country, city, instagram, tiktok, website")
+        .select("name, username, role")
         .eq("id", user.id)
         .single<Profile>();
 
@@ -128,7 +133,6 @@ export default function ProfileTab() {
         Alert.alert("Error", error.message);
         return;
       }
-      if (!mounted.current) return;
       if (data) setProfile(data);
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not load profile.");
@@ -241,11 +245,10 @@ export default function ProfileTab() {
 
   const artistName = profile?.name ?? "";
   const roleLabel = profile?.role ? capitalize(profile.role) : "Artist";
-  const displayName = loading || !artistName ? "Your profile" : artistName;
+  const displayName = artistName || "Your profile";
   const initials = initialsFromName(artistName);
   const genres = parseGenreTags(profile?.genre ?? null);
   const locationStr = [profile?.city, profile?.country].filter(Boolean).join(", ");
-  const metaStr = [genres[0], locationStr].filter(Boolean).join("  ·  ") || "Add your details";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -263,38 +266,7 @@ export default function ProfileTab() {
               <Text style={styles.topLabel}>ARTIST PROFILE</Text>
               <Text style={styles.title}>{displayName}</Text>
             </View>
-            {!editing ? (
-              <Pressable
-                hitSlop={BIG_HIT_SLOP}
-                style={styles.editBtn}
-                onPress={startEditing}
-              >
-                <Ionicons name="create-outline" size={16} color={theme.colors.darkText} />
-                <Text style={styles.editBtnText}>Edit</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.editActions}>
-                <Pressable
-                  hitSlop={BIG_HIT_SLOP}
-                  style={styles.cancelBtn}
-                  onPress={cancelEditing}
-                  disabled={saving}
-                >
-                  <Text style={styles.cancelBtnText}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  hitSlop={BIG_HIT_SLOP}
-                  style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-                  onPress={saveProfile}
-                  disabled={saving}
-                >
-                  <Ionicons name="checkmark" size={16} color={theme.colors.darkText} />
-                  <Text style={styles.saveBtnText}>
-                    {saving ? "Saving..." : "Save"}
-                  </Text>
-                </Pressable>
-              </View>
-            )}
+
           </View>
 
           {/* Identity card */}
@@ -314,9 +286,6 @@ export default function ProfileTab() {
               ) : (
                 <Text style={styles.identityName}>{displayName}</Text>
               )}
-              {!editing && (
-                <Text style={styles.identityMeta}>{metaStr}</Text>
-              )}
               {!editing && genres.length > 0 && (
                 <View style={styles.tagRow}>
                   {genres.map((t) => (
@@ -327,26 +296,6 @@ export default function ProfileTab() {
                 </View>
               )}
             </View>
-          </View>
-
-          {/* About */}
-          <Text style={styles.sectionLabel}>ABOUT</Text>
-          <View style={styles.card}>
-            {editing ? (
-              <TextInput
-                style={[styles.bio, styles.bioInput]}
-                value={editBio}
-                onChangeText={setEditBio}
-                placeholder="Write a short bio..."
-                placeholderTextColor={theme.colors.darkMuted}
-                multiline
-                textAlignVertical="top"
-              />
-            ) : (
-              <Text style={styles.bio}>
-                {profile?.bio || "No bio yet. Tap Edit to add one."}
-              </Text>
-            )}
           </View>
 
           {/* Genres (edit mode) */}
