@@ -30,21 +30,27 @@ import { supabase } from "@/database/db";
  *   1. Use EXPO_PUBLIC_SPOTIFY_REDIRECT_URI when set. Put the exact value you
  *      registered in the Spotify dashboard here (e.g. a deployed https callback
  *      or "mixtape://spotify-auth-callback").
- *   2. Otherwise derive a deterministic URI from the app's own custom scheme
- *      ("mixtape", declared in app.json), yielding "mixtape://spotify-auth-callback".
- *      This is stable across runs/devices in a dev or production build.
+ *   2. Otherwise derive the URI from the app's own custom scheme ("mixtape",
+ *      declared in app.json) plus a fixed path. In a standalone or dev build this
+ *      resolves to the deterministic "mixtape://spotify-auth-callback" — stable
+ *      across runs, networks, and devices, so this is the value to register.
+ *
+ * Tradeoff: in Expo Go the custom scheme is ignored and Expo instead returns an
+ * exp://<dev-ip>:<port>/--/spotify-auth-callback URI whose IP/port vary per
+ * machine/network, so it can't be registered once and reused. Prefer a dev build
+ * (or option 1) for a single stable URI; for Expo Go, register exactly what the
+ * console.log prints below. See docs/spotify-auth.md.
  *
  * Whichever value this resolves to MUST be added to the app's Redirect URIs in
- * the Spotify Developer Dashboard. Log it once on startup so it is easy to copy.
+ * the Spotify Developer Dashboard, which is why we log it on startup to copy.
  */
 const REDIRECT_URI =
   process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ??
   makeRedirectUri({ scheme: "mixtape", path: "spotify-auth-callback" });
 const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID!;
 
-if (__DEV__) {
-  console.log("[Spotify] Redirect URI (register this in the dashboard):", REDIRECT_URI);
-}
+console.log("Redirect URI:", REDIRECT_URI);
+console.log("Client ID:", CLIENT_ID);
 
 const SCOPES = [
   "user-read-email",
