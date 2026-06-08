@@ -1,3 +1,12 @@
+/*
+ * FAN view tab navigator.
+ *
+ * Defines the four fan-facing tabs (HOME, FOR YOU, SHARING, YOU) using the
+ * light theme. The `artist` route in this group is the public artist profile a
+ * fan opens via deep link; it is hidden from the tab bar with `href: null`.
+ * The separate artist experience lives in the `(artist-tabs)` group.
+ */
+
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 

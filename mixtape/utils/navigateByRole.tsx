@@ -1,3 +1,11 @@
+/*
+ * Role-based post-authentication routing.
+ *
+ * After sign-in we don't know whether the user is a fan or an artist until we
+ * read their `profiles.role`. This helper does that lookup and sends them to
+ * the correct tab group, keeping the fan and artist entry points in one place.
+ */
+
 import { Router } from "expo-router";
 import { supabase } from "@/database/db";
 
