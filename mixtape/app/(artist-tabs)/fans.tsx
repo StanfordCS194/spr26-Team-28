@@ -31,7 +31,6 @@ interface CityData {
   lat: number;
   lng: number;
   monthlyListeners: number;
-  totalListens: number;
   topSong: string;
 }
 
@@ -117,7 +116,6 @@ async function fetchMapData(artistId: string): Promise<CityData[]> {
       lat: coords.lat,
       lng: coords.lng,
       monthlyListeners: count,
-      totalListens: count * 7,
       topSong,
     });
   }
@@ -492,14 +490,16 @@ export default function FansTab() {
                   <Text style={styles.statValue}>
                     {selected ? formatNumber(selected.monthlyListeners) : "—"}
                   </Text>
-                  <Text style={styles.statLabel}>{"Listeners\nThis Month"}</Text>
+                  <Text style={styles.statLabel}>{"Sharing\nFans"}</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statBlock}>
                   <Text style={styles.statValue}>
-                    {selected ? formatNumber(selected.totalListens) : "—"}
+                    {selected && totalFans
+                      ? `${Math.round((selected.monthlyListeners / totalFans) * 100)}%`
+                      : "—"}
                   </Text>
-                  <Text style={styles.statLabel}>{"Est. Total\nListens"}</Text>
+                  <Text style={styles.statLabel}>{"Share of\nyour fans"}</Text>
                 </View>
               </View>
 
