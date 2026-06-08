@@ -27,14 +27,21 @@ function passwordChecks(pw: string) {
   };
 }
 
+// Basic email shape check; Supabase does the authoritative validation.
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export default function MakeAccount() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [nameFocused, setNameFocused] = useState(false);
   const [usernameFocused, setUsernameFocused] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [confirmFocused, setConfirmFocused] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -46,10 +53,13 @@ export default function MakeAccount() {
   const passwordsMatch = password === confirmPassword;
   const passwordStrong = checks.hasMinLength && checks.hasNumber;
 
+  const emailValid = isValidEmail(email);
+
   const isDisabled =
     loading ||
     name.trim().length === 0 ||
     username.trim().length === 0 ||
+    !emailValid ||
     password.length === 0 ||
     confirmPassword.length === 0 ||
     !passwordStrong ||
@@ -64,17 +74,22 @@ export default function MakeAccount() {
     if (!passwordsMatch) {
       return;
     }
+    if (!emailValid) {
+      return;
+    }
 
     const trimmedUsername = username.trim().toLowerCase();
+    const trimmedEmail = email.trim().toLowerCase();
 
     setLoading(true);
     try {
-      const generatedEmail = `${trimmedUsername}@mixtape.com`;
       const { data, error } = await db.auth.signUp({
-        email: generatedEmail,
+        email: trimmedEmail,
         password,
         options: {
-          data: { name: name.trim() },
+          // Store the username in metadata; it is no longer derivable from the
+          // email now that we use the fan's real address (issue #32).
+          data: { name: name.trim(), username: trimmedUsername },
         },
       });
 
@@ -128,8 +143,8 @@ export default function MakeAccount() {
           <View style={styles.header}>
             <Text style={styles.title}>Create an Account</Text>
             <Text style={styles.subtitle}>
-              Begin by choosing a username and password. You will pick whether
-              you are a Fan or Artist next.
+              Set up your name, username, email, and password. You will pick
+              whether you are a Fan or Artist next.
             </Text>
           </View>
 
@@ -171,6 +186,38 @@ export default function MakeAccount() {
                 onFocus={() => setUsernameFocused(true)}
                 onBlur={() => setUsernameFocused(false)}
               />
+            </View>
+
+            {/* Email field */}
+            <View>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  emailFocused && styles.inputWrapperFocused,
+                  hasAttempted &&
+                    email.length > 0 &&
+                    !emailValid &&
+                    styles.inputWrapperError,
+                ]}
+              >
+                <Text style={styles.inputLabel}>EMAIL</Text>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  placeholder=""
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
+                />
+              </View>
+              {hasAttempted && email.length > 0 && !emailValid && (
+                <Text style={styles.errorText}>
+                  Enter a valid email address.
+                </Text>
+              )}
             </View>
 
             {/* Password field with show/hide toggle */}

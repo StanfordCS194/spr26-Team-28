@@ -19,19 +19,19 @@ import theme from "@/assets/theme";
 
 export default function ForgotPassword() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
-  const [usernameFocused, setUsernameFocused] = useState(false);
+  const [email, setEmail] = useState("");
+  const [emailFocused, setEmailFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
-  const isDisabled = loading || username.trim().length === 0;
+  const isDisabled = loading || email.trim().length === 0;
 
   async function handleReset() {
-    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedEmail = email.trim().toLowerCase();
     setLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(
-        `${trimmedUsername}@mixtape.com`
+        trimmedEmail
       );
 
       if (error) {
@@ -113,8 +113,7 @@ export default function ForgotPassword() {
           <View style={styles.header}>
             <Text style={styles.title}>Forgot password?</Text>
             <Text style={styles.subtitle}>
-              Enter your username and we will send a reset link to the email on
-              file.
+              Enter your email and we will send you a reset link.
             </Text>
           </View>
 
@@ -122,19 +121,20 @@ export default function ForgotPassword() {
             <View
               style={[
                 styles.inputWrapper,
-                usernameFocused && styles.inputWrapperFocused,
+                emailFocused && styles.inputWrapperFocused,
               ]}
             >
-              <Text style={styles.inputLabel}>USERNAME</Text>
+              <Text style={styles.inputLabel}>EMAIL</Text>
               <TextInput
                 style={styles.input}
-                value={username}
-                onChangeText={setUsername}
+                value={email}
+                onChangeText={setEmail}
                 autoCapitalize="none"
                 autoCorrect={false}
+                keyboardType="email-address"
                 placeholder=""
-                onFocus={() => setUsernameFocused(true)}
-                onBlur={() => setUsernameFocused(false)}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
               />
             </View>
           </View>
