@@ -72,21 +72,26 @@ export default function ShareConsent() {
         return;
       }
 
-      const { error } = await supabase.from("fan_follows").upsert({
-        fan_id: user.id,
-        artist_id: artistId,
-        consented_at: new Date().toISOString(),
-        top_track: topTrack || null,
-      });
+      const { error } = await supabase.from("fan_follows").upsert(
+        {
+          fan_id: user.id,
+          artist_id: artistId,
+          consented_at: new Date().toISOString(),
+          top_track: topTrack || null,
+        },
+        // Re-consenting reactivates the existing row instead of inserting a
+        // duplicate (relies on the UNIQUE(fan_id, artist_id) constraint).
+        { onConflict: "fan_id,artist_id" },
+      );
 
       if (error) {
         Alert.alert("Error", error.message);
         return;
       }
 
-      // TODO: trigger Spotify data fetch + store in Supabase here
-      // await storeFanSpotifyData(user.id, fanData);
-
+      // The fan's Spotify listening data is already persisted earlier, at
+      // connect time (utils/useSpotifyAuth.ts). Consent here is what unlocks
+      // the artist's RLS read of that data — no separate fetch needed.
       console.log(`✅ Fan consented to share with ${artistName}`);
       router.replace("/(tabs)");
     } catch (error: any) {
