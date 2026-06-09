@@ -1,7 +1,7 @@
 /**
  * Hook that returns the current Supabase auth session.
- * Starts as null and returns the session once it's found.
- * If the user is not logged in, returns null.
+ * Starts as undefined while Supabase restores auth state, returns the session
+ * when found, and returns null when the user is not logged in.
  */
 
 import { useEffect, useState } from "react";
@@ -9,8 +9,8 @@ import { useEffect, useState } from "react";
 import { supabase as db } from "@/database/db";
 import { Session } from "@supabase/supabase-js";
 
-export default function useSession(): Session | null {
-  const [session, setSession] = useState<Session | null>(null);
+export default function useSession(): Session | null | undefined {
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
 
   useEffect(() => {
     const getSession = async () => {
