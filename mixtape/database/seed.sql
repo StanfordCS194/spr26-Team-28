@@ -1,5 +1,5 @@
 -- ============================================================================
--- Mixtape — demo seed data  (issue #29)
+-- Mixtape - demo seed data  (issue #29)
 -- ============================================================================
 -- Populates one demo ARTIST account ("Nova Sky") plus ~20 consenting fans so
 -- that the artist-facing screens render with real, varied data:
@@ -19,18 +19,18 @@
 --   Paste this whole file into the Supabase SQL editor and run it, OR:
 --     supabase db execute --file database/seed.sql        (local)
 --   Run database/../supabase/migrations/20260608045615_initial_schema.sql
---   (the schema) FIRST — this script assumes those tables/policies exist.
+--   (the schema) FIRST - this script assumes those tables/policies exist.
 --
 -- IDEMPOTENCY
 --   The script keys everything off synthetic emails of the form
---   "<username>@mixtape.com" (the same scheme the app uses — see
+--   "<username>@mixtape.com" (the same scheme the app uses - see
 --   app/(sign-in)/make-account.tsx). If the demo artist's auth user already
 --   exists it exits early and changes nothing, so re-running is safe and will
 --   not pile up duplicate fans. To re-seed from scratch, delete the demo users
 --   first (see the cleanup snippet at the very bottom of this file).
 --
 -- REQUIRED EXTENSIONS
---   pgcrypto — provides gen_random_uuid(), crypt() and gen_salt('bf') used
+--   pgcrypto - provides gen_random_uuid(), crypt() and gen_salt('bf') used
 --   below. On Supabase it is available; we create it defensively. (gen_salt
 --   lives in the "extensions" schema on Supabase, hence the explicit creation.)
 --
@@ -44,7 +44,7 @@
 --   We set email_confirmed_at = now() so the accounts are usable even if email
 --   confirmation is left ON, and we use the all-zero instance_id that Supabase
 --   uses for a single project. Passwords are bcrypt hashes of 'password' so you
---   can actually sign in as any demo user (username = email local-part).
+--   can actually sign in as any demo user with their full email address.
 --
 -- DATA-SHAPE NOTES (must match the consumers above)
 --   top_tracks  item: { "id", "name", "artists":[{ "name" }], "album":{...} }
@@ -61,7 +61,7 @@
 --     Tokyo / Japan                    Paris / France
 --     Ciudad de México / Mexico
 --   NB: it is "New York City" (not "New York") and "Ciudad de México" (not
---   "Mexico City") — the obvious spellings are NOT in the dataset and would
+--   "Mexico City") - the obvious spellings are NOT in the dataset and would
 --   silently drop those pins.
 --
 -- WHAT THIS CREATES (when the artist did not previously exist)
@@ -85,6 +85,7 @@ declare
 
   artist_id uuid;
   fan_id    uuid;
+  fan_email text;
 
   -- ---- Nova Sky's own catalogue (referenced by fan top_tracks & top_track) --
   -- Stable ids let the dashboard tally these correctly across fans.
@@ -136,7 +137,7 @@ declare
   --   1 username   2 display name   3 city            4 country
   --   5 top_track  (free-text fav Nova Sky song, surfaced per-city on the map)
   --   6 "nova"   how many of nova_tracks (taken from the top) to put in this
-  --              fan's top_tracks — keeps the artist's own songs dominant
+  --              fan's top_tracks - keeps the artist's own songs dominant
   --   7 "oth"    how many tracks to add from the shared "other" pool, via a
   --              per-fan rotating window (so tallies form a gradient, not a tie)
   --   8 "art"    how many artists to add from the shared pool (also rotating)
@@ -181,12 +182,12 @@ begin
   -- If the demo artist already exists, assume the whole demo set is present and
   -- do nothing. This keeps re-runs safe and avoids duplicate fans.
   if exists (select 1 from auth.users where email = artist_email) then
-    raise notice 'Demo data already present (artist % exists) — skipping seed.', artist_email;
+    raise notice 'Demo data already present (artist % exists) - skipping seed.', artist_email;
     return;
   end if;
 
   -- ==========================================================================
-  -- 1) ARTIST — auth.users row, then profile, then releases
+  -- 1) ARTIST - auth.users row, then profile, then releases
   -- ==========================================================================
   artist_id := gen_random_uuid();
 
@@ -204,6 +205,21 @@ begin
     jsonb_build_object('name', artist_name, 'username', artist_username),
     now(), now(),
     '', '', '', ''
+  );
+
+  insert into auth.identities (
+    provider_id, user_id, identity_data, provider,
+    last_sign_in_at, created_at, updated_at
+  ) values (
+    artist_id::text, artist_id,
+    jsonb_build_object(
+      'sub', artist_id::text,
+      'email', artist_email,
+      'email_verified', false,
+      'phone_verified', false
+    ),
+    'email',
+    now(), now(), now()
   );
 
   insert into public.profiles (
@@ -226,7 +242,7 @@ begin
     (artist_id, 'Afterglow',       'album',  date '2025-02-14', 11);
 
   -- ==========================================================================
-  -- 2) FANS — for each: auth.users -> profile -> fan_follows -> spotify data
+  -- 2) FANS - for each: auth.users -> profile -> fan_follows -> spotify data
   -- ==========================================================================
   n_oth := jsonb_array_length(other_tracks);
   n_art := jsonb_array_length(other_artists);
@@ -234,6 +250,7 @@ begin
   for fan in select * from jsonb_array_elements(fans)
   loop
     fan_id := gen_random_uuid();
+    fan_email := (fan->>'u') || '@mixtape.com';
     off    := off + 1;   -- advance the rotating window for each fan
 
     -- --- auth.users -------------------------------------------------------
@@ -246,12 +263,27 @@ begin
       email_change, email_change_token_new
     ) values (
       zero_instance, fan_id, 'authenticated', 'authenticated',
-      (fan->>'u') || '@mixtape.com',
+      fan_email,
       crypt(demo_password, gen_salt('bf')), now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
       jsonb_build_object('name', fan->>'n', 'username', fan->>'u'),
       now(), now(),
       '', '', '', ''
+    );
+
+    insert into auth.identities (
+      provider_id, user_id, identity_data, provider,
+      last_sign_in_at, created_at, updated_at
+    ) values (
+      fan_id::text, fan_id,
+      jsonb_build_object(
+        'sub', fan_id::text,
+        'email', fan_email,
+        'email_verified', false,
+        'phone_verified', false
+      ),
+      'email',
+      now(), now(), now()
     );
 
     -- --- profile ----------------------------------------------------------
@@ -260,7 +292,7 @@ begin
       fan_id, fan->>'n', fan->>'u', 'fan', fan->>'city', fan->>'co'
     );
 
-    -- --- fan_follows (CONSENTED — consented_at must be non-null) -----------
+    -- --- fan_follows (CONSENTED - consented_at must be non-null) -----------
     -- top_track is the free-text favourite surfaced per-city on the map.
     insert into public.fan_follows (fan_id, artist_id, consented_at, top_track)
     values (fan_id, artist_id, now(), fan->>'top');
@@ -328,7 +360,7 @@ end $$;
 
 
 -- ============================================================================
--- CLEANUP (optional) — delete the demo data so you can re-seed from scratch.
+-- CLEANUP (optional) - delete the demo data so you can re-seed from scratch.
 -- Deleting the auth.users rows cascades to profiles, fan_follows,
 -- fan_spotify_data and releases via ON DELETE CASCADE. Uncomment to use.
 -- ============================================================================
