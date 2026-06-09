@@ -42,6 +42,26 @@ function initialsFromName(name: string): string {
   );
 }
 
+// Whole days since an ISO date, or null if missing.
+function daysSince(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  return Math.floor((Date.now() - then) / 86_400_000);
+}
+
+// Short label for the last sync, e.g. today or 3 days ago.
+function relativeSync(iso: string | null | undefined): string {
+  const d = daysSince(iso);
+  if (d == null) return "recently";
+  if (d <= 0) return "today";
+  if (d === 1) return "yesterday";
+  return `${d} days ago`;
+}
+
+// Snapshots older than this nudge a re-sync.
+const STALE_DAYS = 7;
+
 export default function YouTab() {
   const router = useRouter();
   const mounted = useRef(true);
@@ -152,6 +172,8 @@ export default function YouTab() {
   const location = [profile?.city, profile?.country].filter(Boolean).join(", ");
   const topTracks = spotify?.top_tracks?.slice(0, 5) ?? [];
   const topArtists = spotify?.top_artists?.slice(0, 5) ?? [];
+  const syncDays = daysSince(spotify?.fetched_at);
+  const isStale = syncDays != null && syncDays >= STALE_DAYS;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -256,15 +278,17 @@ export default function YouTab() {
               <View style={[styles.spotifyRow, styles.rowBorder]}>
                 <View style={styles.spotifyLeft}>
                   <View style={styles.spotifyDot} />
-                  <View>
+                  <View style={styles.spotifyInfo}>
                     <Text style={styles.spotifyTitle}>Connected</Text>
-                    <Text style={styles.spotifyMeta}>
-                      Last synced {spotify.fetched_at
-                        ? new Date(spotify.fetched_at).toLocaleDateString("en-US", {
-                            month: "short", day: "numeric",
-                          })
-                        : "recently"}
+                    <Text style={[styles.spotifyMeta, isStale && styles.spotifyMetaStale]}>
+                      Last synced {relativeSync(spotify.fetched_at)}
                     </Text>
+                    {isStale && (
+                      <Text style={styles.staleNudge}>
+                        Your listening data is {syncDays} days old. Re-sync to keep
+                        the artists you share with up to date.
+                      </Text>
+                    )}
                   </View>
                 </View>
               </View>
@@ -274,15 +298,23 @@ export default function YouTab() {
                 disabled={resyncing}
               >
                 <View style={styles.spotifyLeft}>
-                  <Ionicons name="refresh-outline" size={16} color={theme.colors.muted} />
-                  <Text style={styles.spotifyRefresh}>
+                  <Ionicons
+                    name="refresh-outline"
+                    size={16}
+                    color={isStale ? theme.colors.secondary : theme.colors.muted}
+                  />
+                  <Text style={[styles.spotifyRefresh, isStale && styles.spotifyRefreshStale]}>
                     {resyncing ? "Syncing..." : "Re-sync listening data"}
                   </Text>
                 </View>
                 {resyncing ? (
                   <ActivityIndicator size="small" color={theme.colors.muted} />
                 ) : (
-                  <Ionicons name="chevron-forward" size={14} color={theme.colors.muted} />
+                  <Ionicons
+                    name="chevron-forward"
+                    size={14}
+                    color={isStale ? theme.colors.secondary : theme.colors.muted}
+                  />
                 )}
               </Pressable>
             </View>
@@ -530,6 +562,7 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.body,
     color: theme.colors.text,
   },
+  spotifyInfo: { flex: 1 },
   spotifyMeta: {
     fontFamily: theme.fonts.ui,
     fontSize: theme.fontSizes.tiny,
@@ -537,9 +570,22 @@ const styles = StyleSheet.create({
     marginTop: 2,
     letterSpacing: 0.3,
   },
+  spotifyMetaStale: {
+    color: theme.colors.secondary,
+  },
+  staleNudge: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.secondary,
+    marginTop: 6,
+    lineHeight: 16,
+  },
   spotifyRefresh: {
     fontFamily: theme.fonts.sans,
     fontSize: theme.fontSizes.body,
     color: theme.colors.muted,
+  },
+  spotifyRefreshStale: {
+    color: theme.colors.secondary,
   },
 });
