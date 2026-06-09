@@ -22,13 +22,13 @@ import theme from "@/assets/theme";
 function friendlyError(message: string): string {
   const lower = message.toLowerCase();
   if (lower.includes("invalid login credentials")) {
-    return "Wrong username or password. Please try again.";
+    return "Wrong email or password. Please try again.";
   }
   if (lower.includes("email not confirmed")) {
     return "Your account has not been confirmed yet.";
   }
   if (lower.includes("user not found")) {
-    return "Account not found. Check your username or create a new account.";
+    return "Account not found. Check your email or create a new account.";
   }
   if (lower.includes("too many requests") || lower.includes("rate limit")) {
     return "Too many attempts. Please wait a moment and try again.";
@@ -38,9 +38,9 @@ function friendlyError(message: string): string {
 
 export default function SignIn() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [usernameFocused, setUsernameFocused] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -49,24 +49,24 @@ export default function SignIn() {
   // so we only show validation errors after the first try.
   const [hasAttempted, setHasAttempted] = useState(false);
 
-  const usernameEmpty = username.trim().length === 0;
+  const emailEmpty = email.trim().length === 0;
   const passwordTooShort = password.length > 0 && password.length < 6;
   const passwordEmpty = password.length === 0;
 
-  const isDisabled = loading || usernameEmpty || passwordEmpty;
+  const isDisabled = loading || emailEmpty || passwordEmpty;
 
   async function signIn() {
     setHasAttempted(true);
 
-    if (usernameEmpty || passwordEmpty) {
+    if (emailEmpty || passwordEmpty) {
       return;
     }
 
-    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedEmail = email.trim().toLowerCase();
     setLoading(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email: `${trimmedUsername}@mixtape.com`,
+        email: trimmedEmail,
         password,
       });
 
@@ -111,24 +111,25 @@ export default function SignIn() {
               <View
                 style={[
                   styles.inputWrapper,
-                  usernameFocused && styles.inputWrapperFocused,
-                  hasAttempted && usernameEmpty && styles.inputWrapperError,
+                  emailFocused && styles.inputWrapperFocused,
+                  hasAttempted && emailEmpty && styles.inputWrapperError,
                 ]}
               >
-                <Text style={styles.inputLabel}>USERNAME</Text>
+                <Text style={styles.inputLabel}>EMAIL</Text>
                 <TextInput
                   style={styles.input}
-                  value={username}
-                  onChangeText={setUsername}
+                  value={email}
+                  onChangeText={setEmail}
                   autoCapitalize="none"
                   autoCorrect={false}
+                  keyboardType="email-address"
                   placeholder=""
-                  onFocus={() => setUsernameFocused(true)}
-                  onBlur={() => setUsernameFocused(false)}
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
                 />
               </View>
-              {hasAttempted && usernameEmpty && (
-                <Text style={styles.errorText}>Username is required.</Text>
+              {hasAttempted && emailEmpty && (
+                <Text style={styles.errorText}>Email is required.</Text>
               )}
             </View>
 

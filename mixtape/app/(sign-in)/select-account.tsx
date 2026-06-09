@@ -34,7 +34,7 @@ export default function SelectAccount() {
         return;
       }
 
-      const username = user.email?.replace("@mixtape.com", "") ?? "";
+      const username = user.user_metadata?.username ?? "";
       const name = user.user_metadata?.name ?? "";
 
       const { error: profileError } = await supabase
