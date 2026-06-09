@@ -9,13 +9,17 @@
 import { Router } from "expo-router";
 import { supabase } from "@/database/db";
 
-type RoleDestination = "/(artist-tabs)" | "/(tabs)";
+type RoleDestination =
+  | "/(artist-tabs)"
+  | "/(tabs)"
+  | "/(sign-in)/(onboarding)/select-account";
 
 /**
  * Fetches the current user's role from the profiles table
  * and returns the correct tab group.
- * - fan   → /(tabs)
- * - artist → /(artist-tabs)
+ * - fan -> /(tabs)
+ * - artist -> /(artist-tabs)
+ * - missing profile -> /(sign-in)/(onboarding)/select-account
  */
 export async function getRoleDestination(): Promise<RoleDestination | null> {
   const {
@@ -28,6 +32,8 @@ export async function getRoleDestination(): Promise<RoleDestination | null> {
     .select("role")
     .eq("id", user.id)
     .maybeSingle();
+
+  if (!profile?.role) return "/(sign-in)/(onboarding)/select-account";
 
   return profile?.role === "artist" ? "/(artist-tabs)" : "/(tabs)";
 }

@@ -16,6 +16,17 @@ import theme from "@/assets/theme";
 
 type Role = "fan" | "artist";
 
+function cleanUsername(value: string, userId: string): string {
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return cleaned || `user_${userId.slice(0, 8)}`;
+}
+
 export default function SelectAccount() {
   const router = useRouter();
   const [selected, setSelected] = useState<Role>("fan");
@@ -34,12 +45,20 @@ export default function SelectAccount() {
         return;
       }
 
-      const username = user.user_metadata?.username ?? "";
-      const name = user.user_metadata?.name ?? "";
+      const emailName = user.email?.split("@")[0] ?? "";
+      const rawUsername = user.user_metadata?.username ?? emailName;
+      const username = cleanUsername(rawUsername, user.id);
+      const name =
+        user.user_metadata?.name?.trim() ||
+        rawUsername.trim() ||
+        "Mixtape User";
 
       const { error: profileError } = await supabase
         .from("profiles")
-        .insert({ id: user.id, name, username, role: selected });
+        .upsert(
+          { id: user.id, name, username, role: selected },
+          { onConflict: "id" },
+        );
 
       if (profileError) {
         Alert.alert("Error", profileError.message);
@@ -49,7 +68,7 @@ export default function SelectAccount() {
       await supabase.auth.updateUser({ data: { role: selected } });
 
       if (selected === "artist") {
-        // Artists go straight to their dashboard — no Spotify or follow steps
+        // Artists go straight to their dashboard, no Spotify or follow steps.
         router.replace("/(artist-tabs)");
       } else {
         // Fans continue to select location

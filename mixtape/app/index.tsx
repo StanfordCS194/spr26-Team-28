@@ -19,7 +19,10 @@ import useSession from "@/utils/hooks/useSession";
 export default function App() {
   const session = useSession();
   const [roleDestination, setRoleDestination] = useState<
-    "/(artist-tabs)" | "/(tabs)" | null
+    | "/(artist-tabs)"
+    | "/(tabs)"
+    | "/(sign-in)/(onboarding)/select-account"
+    | null
   >(null);
 
   useEffect(() => {
@@ -30,7 +33,7 @@ export default function App() {
 
     getRoleDestination().then((destination) => {
       if (active) {
-        setRoleDestination(destination ?? "/(tabs)");
+        setRoleDestination(destination);
       }
     });
 
