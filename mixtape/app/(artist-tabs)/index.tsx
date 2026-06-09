@@ -16,6 +16,11 @@ interface TrackTally {
   growthPct: number | null;
 }
 
+interface GenreTally {
+  name: string;
+  count: number;
+}
+
 function ListenerChart({ points }: { points: { label: string; count: number }[] }) {
   if (points.length < 2) return <View style={{ height: 100, marginTop: 16 }} />;
   const max = Math.max(...points.map((p) => p.count));
@@ -118,6 +123,7 @@ export default function ArtistInsights() {
   const [cityCount, setCityCount] = useState(0);
   const [consentedDates, setConsentedDates] = useState<string[]>([]);
   const [topTracks, setTopTracks] = useState<TrackTally[]>([]);
+  const [topGenres, setTopGenres] = useState<GenreTally[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -174,6 +180,16 @@ export default function ArtistInsights() {
         );
         setCityCount(uniqueCities.size);
       }
+
+      // Consenting fans' Spotify top artists carry genres; tally them.
+      const { data: spotifyRows } = await supabase
+        .from("fan_spotify_data")
+        .select("top_artists")
+        .in("fan_id", fanIds);
+
+      if (mounted.current && spotifyRows) {
+        setTopGenres(buildTopGenres(spotifyRows));
+      }
     } catch (e) {
       if (mounted.current) Alert.alert("Error", "Could not load dashboard data.");
     } finally {
@@ -209,6 +225,22 @@ export default function ArtistInsights() {
       });
   }
 
+  // Count how often each genre appears across consenting fans' top artists.
+  function buildTopGenres(rows: any[]): GenreTally[] {
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      for (const artist of row?.top_artists ?? []) {
+        for (const genre of artist?.genres ?? []) {
+          counts[genre] = (counts[genre] ?? 0) + 1;
+        }
+      }
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, count]) => ({ name, count }));
+  }
+
   function buildListenerPoints(dates: string[]): { label: string; count: number }[] {
     if (!dates.length) return [];
     const buckets: Record<string, number> = {};
@@ -228,7 +260,7 @@ export default function ArtistInsights() {
 
   const firstName = artistName.split(" ")[0];
   const listenerPoints = buildListenerPoints(consentedDates);
-  const hasData = topTracks.length > 0;
+  const hasData = topTracks.length > 0 || topGenres.length > 0;
 
   const growthDisplay = (() => {
     if (listenerPoints.length < 2) return "--";
@@ -336,6 +368,24 @@ export default function ArtistInsights() {
           </View>
         )}
 
+        {topGenres.length > 0 && (
+          <View style={styles.genresSection}>
+            <View style={styles.tracksSectionHeader}>
+              <Text style={styles.tracksSectionTitle}>
+                Genres your fans listen to
+              </Text>
+            </View>
+            <View style={styles.genreChips}>
+              {topGenres.map((genre) => (
+                <View key={genre.name} style={styles.genreChip}>
+                  <Text style={styles.genreChipText}>{genre.name}</Text>
+                  <Text style={styles.genreChipCount}>{genre.count}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {!hasData && !loading && (
           <View style={styles.emptyCard}>
             <Ionicons name="analytics-outline" size={28} color={theme.colors.darkMuted} />
@@ -353,6 +403,40 @@ export default function ArtistInsights() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.darkBackground },
   scrollContent: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 40 },
+
+  genresSection: {
+    backgroundColor: theme.colors.darkCard,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  genreChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 14,
+  },
+  genreChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  genreChipText: {
+    fontFamily: theme.fonts.sansSemiBold,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.darkText,
+  },
+  genreChipCount: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.secondary,
+  },
 
   topBar: {
     flexDirection: "row",
