@@ -1,4 +1,5 @@
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -12,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 
 import { supabase } from "@/database/db";
+import { getStoredSpotifyToken, syncFanSpotifyData } from "@/utils/useSpotifyAuth";
 import theme from "@/assets/theme";
 
 interface Profile {
@@ -48,6 +50,7 @@ export default function YouTab() {
   const [followCount, setFollowCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -108,6 +111,39 @@ export default function YouTab() {
     } catch (e: any) {
       Alert.alert("Sign out failed", e?.message ?? "Network error");
       if (mounted.current) setSigningOut(false);
+    }
+  }
+
+  // Re-sync listening data. If a recent Spotify token is still stored (from the
+  // connect step), refresh fan_spotify_data in place; otherwise fall back to the
+  // full OAuth connect flow.
+  async function onResync() {
+    if (resyncing) return;
+    setResyncing(true);
+    try {
+      const token = await getStoredSpotifyToken();
+      if (!token) {
+        router.push("/(sign-in)/connect-music");
+        return;
+      }
+
+      await syncFanSpotifyData(token);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: fresh } = await supabase
+          .from("fan_spotify_data")
+          .select("top_tracks, top_artists, fetched_at")
+          .eq("fan_id", user.id)
+          .order("fetched_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (fresh && mounted.current) setSpotify(fresh as SpotifyData);
+      }
+    } catch (e: any) {
+      Alert.alert("Re-sync failed", e?.message ?? "Could not refresh your listening data.");
+    } finally {
+      if (mounted.current) setResyncing(false);
     }
   }
 
@@ -233,14 +269,21 @@ export default function YouTab() {
                 </View>
               </View>
               <Pressable
-                style={styles.spotifyRow}
-                onPress={() => router.push("/(sign-in)/connect-music")}
+                style={[styles.spotifyRow, resyncing && { opacity: 0.6 }]}
+                onPress={onResync}
+                disabled={resyncing}
               >
                 <View style={styles.spotifyLeft}>
                   <Ionicons name="refresh-outline" size={16} color={theme.colors.muted} />
-                  <Text style={styles.spotifyRefresh}>Re-sync listening data</Text>
+                  <Text style={styles.spotifyRefresh}>
+                    {resyncing ? "Syncing..." : "Re-sync listening data"}
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={14} color={theme.colors.muted} />
+                {resyncing ? (
+                  <ActivityIndicator size="small" color={theme.colors.muted} />
+                ) : (
+                  <Ionicons name="chevron-forward" size={14} color={theme.colors.muted} />
+                )}
               </Pressable>
             </View>
           </>
