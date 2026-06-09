@@ -99,14 +99,11 @@ export default function ForYouTab() {
     return aFollowed - bFollowed;
   });
 
-  function handleArtistPress(artist: Artist) {
-    if (followedIds.has(artist.id)) return;
+  function openArtistProfile(artist: Artist) {
     router.push({
-      pathname: "/(sign-in)/favorite-song",
+      pathname: "/(tabs)/artist/[id]",
       params: {
-        artistId: artist.id,
-        artistName: artist.name,
-        artistUsername: artist.username,
+        id: artist.id,
       },
     });
   }
@@ -159,9 +156,9 @@ export default function ForYouTab() {
             <Pressable
               style={({ pressed }) => [
                 styles.artistCard,
-                pressed && !isFollowed && styles.artistCardPressed,
+                pressed && styles.artistCardPressed,
               ]}
-              onPress={() => handleArtistPress(item)}
+              onPress={() => openArtistProfile(item)}
             >
               <View style={styles.artistTop}>
                 <View style={[styles.artistAvatar, { backgroundColor: colorFromId(item.id) }]}>

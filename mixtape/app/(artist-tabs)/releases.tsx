@@ -38,7 +38,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 function formatDate(iso: string | null): string {
   if (!iso) return "Unreleased";
-  const d = new Date(iso);
+  const d = new Date(iso.includes("T") ? iso : `${iso}T00:00:00`);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 

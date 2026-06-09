@@ -32,6 +32,20 @@ type ArtistProfile = {
   website: string | null;
 };
 
+type Release = {
+  id: string;
+  title: string;
+  release_type: "single" | "ep" | "album" | string;
+  release_date: string | null;
+  track_count: number;
+};
+
+const RELEASE_TYPE_LABELS: Record<string, string> = {
+  single: "Single",
+  ep: "EP",
+  album: "Album",
+};
+
 function initialsFromName(name: string): string {
   return (
     name
@@ -68,12 +82,33 @@ function colorFromId(id: string): string {
   return colors[index];
 }
 
+function formatReleaseDate(iso: string | null): string {
+  if (!iso) return "Unreleased";
+  const d = new Date(iso.includes("T") ? iso : `${iso}T00:00:00`);
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTrackCount(count: number): string {
+  return `${count} ${count === 1 ? "track" : "tracks"}`;
+}
+
+function colorForReleaseType(type: string): string {
+  if (type === "album") return theme.colors.secondary;
+  if (type === "ep") return theme.colors.primary;
+  return theme.colors.border;
+}
+
 export default function ArtistPublicProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const mounted = useRef(true);
 
   const [profile, setProfile] = useState<ArtistProfile | null>(null);
+  const [releases, setReleases] = useState<Release[]>([]);
   const [fanCount, setFanCount] = useState<number>(0);
   const [alreadySharing, setAlreadySharing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -92,6 +127,8 @@ export default function ArtistPublicProfile() {
 
   async function loadArtist() {
     setLoading(true);
+    setAlreadySharing(false);
+    setReleases([]);
     try {
       // Fetch the artist profile
       const { data: profileData, error: profileError } = await supabase
@@ -121,6 +158,19 @@ export default function ArtistPublicProfile() {
       if (!mounted.current) return;
       if (!countError && count !== null) {
         setFanCount(count);
+      }
+
+      // Show a small public discography preview if the artist has releases.
+      const { data: releaseData, error: releaseError } = await supabase
+        .from("releases")
+        .select("id, title, release_type, release_date, track_count")
+        .eq("artist_id", id)
+        .order("release_date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+      if (mounted.current && !releaseError) {
+        setReleases((releaseData as Release[]) ?? []);
       }
 
       // Check whether the current fan already shares with this artist
@@ -306,6 +356,53 @@ export default function ArtistPublicProfile() {
             <Text style={styles.sectionLabel}>ABOUT</Text>
             <View style={styles.card}>
               <Text style={styles.bioText}>{profile.bio}</Text>
+            </View>
+          </>
+        )}
+
+        {/* Recent releases */}
+        {releases.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>RECENT RELEASES</Text>
+            <View style={styles.card}>
+              {releases.map((release, i) => (
+                <View
+                  key={release.id}
+                  style={[
+                    styles.releaseRow,
+                    i < releases.length - 1 && styles.releaseRowBorder,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.releaseIcon,
+                      { borderColor: colorForReleaseType(release.release_type) },
+                    ]}
+                  >
+                    <Ionicons
+                      name="disc-outline"
+                      size={18}
+                      color={theme.colors.muted}
+                    />
+                  </View>
+                  <View style={styles.releaseInfo}>
+                    <Text style={styles.releaseTitle} numberOfLines={1}>
+                      {release.title}
+                    </Text>
+                    <Text style={styles.releaseMeta} numberOfLines={1}>
+                      {RELEASE_TYPE_LABELS[release.release_type] ??
+                        release.release_type}
+                      {"  "}
+                      {formatReleaseDate(release.release_date)}
+                    </Text>
+                  </View>
+                  {release.track_count > 0 && (
+                    <Text style={styles.releaseCount}>
+                      {formatTrackCount(release.track_count)}
+                    </Text>
+                  )}
+                </View>
+              ))}
             </View>
           </>
         )}
@@ -536,6 +633,51 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.sansSemiBold,
     fontSize: theme.fontSizes.body,
     color: theme.colors.text,
+  },
+
+  // Public releases preview
+  releaseRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+  },
+  releaseRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  releaseIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.background,
+  },
+  releaseInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  releaseTitle: {
+    fontFamily: theme.fonts.sansSemiBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  releaseMeta: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.muted,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  releaseCount: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.muted,
+    textAlign: "right",
+    minWidth: 56,
   },
 
   // Already sharing badge
