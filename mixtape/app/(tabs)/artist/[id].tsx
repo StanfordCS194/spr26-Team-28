@@ -153,7 +153,7 @@ export default function ArtistPublicProfile() {
   function goToShareConsent() {
     if (!profile) return;
     router.push({
-      pathname: "/(sign-in)/share-consent",
+      pathname: "/(sign-in)/favorite-song",
       params: {
         artistId: id,
         artistName: profile.name,
