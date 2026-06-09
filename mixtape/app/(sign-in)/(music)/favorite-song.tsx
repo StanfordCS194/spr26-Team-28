@@ -65,7 +65,8 @@ export default function FavoriteSong() {
           .select("id, title, release_type")
           .eq("artist_id", artistId)
           .eq("release_type", "single")
-          .order("release_date", { ascending: false });
+          .order("release_date", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false });
 
         if (error) {
           if (mounted) setReleases([]);
