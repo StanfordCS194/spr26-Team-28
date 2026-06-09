@@ -21,6 +21,8 @@ interface GenreTally {
   count: number;
 }
 
+const ACTIVE_FAN_WINDOW_DAYS = 7;
+
 function ListenerChart({ points }: { points: { label: string; count: number }[] }) {
   if (points.length < 2) return <View style={{ height: 100, marginTop: 16 }} />;
   const max = Math.max(...points.map((p) => p.count));
@@ -120,6 +122,7 @@ export default function ArtistInsights() {
   const mounted = useRef(true);
   const [artistName, setArtistName] = useState("");
   const [fanCount, setFanCount] = useState(0);
+  const [activeFanCount, setActiveFanCount] = useState(0);
   const [cityCount, setCityCount] = useState(0);
   const [consentedDates, setConsentedDates] = useState<string[]>([]);
   const [topTracks, setTopTracks] = useState<TrackTally[]>([]);
@@ -169,6 +172,15 @@ export default function ArtistInsights() {
 
       const fanIds = followRows.map((f: any) => f.fan_id);
 
+      if (fanIds.length === 0) {
+        if (mounted.current) {
+          setActiveFanCount(0);
+          setCityCount(0);
+          setTopGenres([]);
+        }
+        return;
+      }
+
       const { data: profileRows } = await supabase
         .from("profiles")
         .select("city")
@@ -184,11 +196,12 @@ export default function ArtistInsights() {
       // Consenting fans' Spotify top artists carry genres; tally them.
       const { data: spotifyRows } = await supabase
         .from("fan_spotify_data")
-        .select("top_artists")
+        .select("top_artists, fetched_at")
         .in("fan_id", fanIds);
 
       if (mounted.current && spotifyRows) {
         setTopGenres(buildTopGenres(spotifyRows));
+        setActiveFanCount(countActiveFans(spotifyRows));
       }
     } catch (e) {
       if (mounted.current) Alert.alert("Error", "Could not load dashboard data.");
@@ -241,6 +254,14 @@ export default function ArtistInsights() {
       .map(([name, count]) => ({ name, count }));
   }
 
+  function countActiveFans(rows: any[]): number {
+    const cutoff = Date.now() - ACTIVE_FAN_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    return rows.filter((row) => {
+      const fetchedAt = new Date(row?.fetched_at).getTime();
+      return Number.isFinite(fetchedAt) && fetchedAt >= cutoff;
+    }).length;
+  }
+
   function buildListenerPoints(dates: string[]): { label: string; count: number }[] {
     if (!dates.length) return [];
     const buckets: Record<string, number> = {};
@@ -260,7 +281,7 @@ export default function ArtistInsights() {
 
   const firstName = artistName.split(" ")[0];
   const listenerPoints = buildListenerPoints(consentedDates);
-  const hasData = topTracks.length > 0 || topGenres.length > 0;
+  const hasData = topTracks.length > 0 || topGenres.length > 0 || activeFanCount > 0;
 
   const growthDisplay = (() => {
     if (listenerPoints.length < 2) return "--";
@@ -319,6 +340,10 @@ export default function ArtistInsights() {
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{fanCount || "--"}</Text>
             <Text style={styles.statLabel}>CONSENTING{"\n"}FANS</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{activeFanCount || "--"}</Text>
+            <Text style={styles.statLabel}>ACTIVE{"\n"}7 DAYS</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>
@@ -526,11 +551,12 @@ const styles = StyleSheet.create({
 
   statsRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
     marginBottom: 28,
   },
   statCard: {
-    flex: 1,
+    width: "48%",
     backgroundColor: theme.colors.darkCard,
     borderRadius: 14,
     padding: 14,
