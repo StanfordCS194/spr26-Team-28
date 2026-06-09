@@ -21,7 +21,25 @@ interface GenreTally {
   count: number;
 }
 
+interface DataHealth {
+  total: number;
+  withData: number;
+  fresh: number;
+  stale: number;
+  missing: number;
+  coveragePct: number;
+}
+
 const ACTIVE_FAN_WINDOW_DAYS = 7;
+
+const EMPTY_DATA_HEALTH: DataHealth = {
+  total: 0,
+  withData: 0,
+  fresh: 0,
+  stale: 0,
+  missing: 0,
+  coveragePct: 0,
+};
 
 function ListenerChart({ points }: { points: { label: string; count: number }[] }) {
   if (points.length < 2) return <View style={{ height: 100, marginTop: 16 }} />;
@@ -127,6 +145,7 @@ export default function ArtistInsights() {
   const [consentedDates, setConsentedDates] = useState<string[]>([]);
   const [topTracks, setTopTracks] = useState<TrackTally[]>([]);
   const [topGenres, setTopGenres] = useState<GenreTally[]>([]);
+  const [dataHealth, setDataHealth] = useState<DataHealth>(EMPTY_DATA_HEALTH);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -177,6 +196,7 @@ export default function ArtistInsights() {
           setActiveFanCount(0);
           setCityCount(0);
           setTopGenres([]);
+          setDataHealth(EMPTY_DATA_HEALTH);
         }
         return;
       }
@@ -196,12 +216,14 @@ export default function ArtistInsights() {
       // Consenting fans' Spotify top artists carry genres; tally them.
       const { data: spotifyRows } = await supabase
         .from("fan_spotify_data")
-        .select("top_artists, fetched_at")
+        .select("fan_id, top_artists, fetched_at")
         .in("fan_id", fanIds);
 
-      if (mounted.current && spotifyRows) {
-        setTopGenres(buildTopGenres(spotifyRows));
-        setActiveFanCount(countActiveFans(spotifyRows));
+      const spotifyDataRows = spotifyRows ?? [];
+      if (mounted.current) {
+        setTopGenres(buildTopGenres(spotifyDataRows));
+        setActiveFanCount(countActiveFans(spotifyDataRows));
+        setDataHealth(buildDataHealth(fanIds, spotifyDataRows));
       }
     } catch (e) {
       if (mounted.current) Alert.alert("Error", "Could not load dashboard data.");
@@ -262,6 +284,36 @@ export default function ArtistInsights() {
     }).length;
   }
 
+  function buildDataHealth(fanIds: string[], rows: any[]): DataHealth {
+    const fansWithData = new Set<string>();
+    let fresh = 0;
+
+    for (const row of rows) {
+      if (row?.fan_id) fansWithData.add(row.fan_id);
+      const fetchedAt = new Date(row?.fetched_at).getTime();
+      if (
+        Number.isFinite(fetchedAt) &&
+        fetchedAt >= Date.now() - ACTIVE_FAN_WINDOW_DAYS * 24 * 60 * 60 * 1000
+      ) {
+        fresh += 1;
+      }
+    }
+
+    const total = fanIds.length;
+    const withData = fansWithData.size;
+    const missing = Math.max(total - withData, 0);
+    const stale = Math.max(withData - fresh, 0);
+
+    return {
+      total,
+      withData,
+      fresh,
+      stale,
+      missing,
+      coveragePct: total === 0 ? 0 : Math.round((withData / total) * 100),
+    };
+  }
+
   function buildListenerPoints(dates: string[]): { label: string; count: number }[] {
     if (!dates.length) return [];
     const buckets: Record<string, number> = {};
@@ -282,6 +334,7 @@ export default function ArtistInsights() {
   const firstName = artistName.split(" ")[0];
   const listenerPoints = buildListenerPoints(consentedDates);
   const hasData = topTracks.length > 0 || topGenres.length > 0 || activeFanCount > 0;
+  const dataHealthIssueCount = dataHealth.stale + dataHealth.missing;
 
   const growthDisplay = (() => {
     if (listenerPoints.length < 2) return "--";
@@ -316,7 +369,7 @@ export default function ArtistInsights() {
             <Text style={styles.privacyBold}>
               {fanCount} {fanCount === 1 ? "fan" : "fans"}
             </Text>{" "}
-            who explicitly chose to share with you. Aggregated only — no
+            who explicitly chose to share with you. Aggregated only - no
             individual data.
           </Text>
         </View>
@@ -358,6 +411,54 @@ export default function ArtistInsights() {
             <Text style={styles.statLabel}>CITIES{"\n"}REACHED</Text>
           </View>
         </View>
+
+        {fanCount > 0 && (
+          <View style={styles.healthCard}>
+            <View style={styles.healthHeader}>
+              <Text style={styles.healthLabel}>DATA HEALTH</Text>
+              <View
+                style={[
+                  styles.healthBadge,
+                  dataHealthIssueCount > 0 && styles.healthBadgeWarning,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.healthBadgeText,
+                    dataHealthIssueCount > 0 && styles.healthBadgeTextWarning,
+                  ]}
+                >
+                  {dataHealth.coveragePct}% coverage
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.healthTitle}>
+              {dataHealth.fresh} fresh Spotify{" "}
+              {dataHealth.fresh === 1 ? "snapshot" : "snapshots"}
+            </Text>
+            <Text style={styles.healthCopy}>
+              {dataHealthIssueCount === 0
+                ? "Every consenting fan has listening data from the active insight window."
+                : `${dataHealthIssueCount} ${
+                    dataHealthIssueCount === 1 ? "fan needs" : "fans need"
+                  } a fresh sync before their listening data counts in active insights.`}
+            </Text>
+            <View style={styles.healthMetrics}>
+              <View style={styles.healthMetric}>
+                <Text style={styles.healthMetricValue}>{dataHealth.fresh}</Text>
+                <Text style={styles.healthMetricLabel}>fresh 7 days</Text>
+              </View>
+              <View style={styles.healthMetric}>
+                <Text style={styles.healthMetricValue}>{dataHealth.stale}</Text>
+                <Text style={styles.healthMetricLabel}>stale</Text>
+              </View>
+              <View style={styles.healthMetric}>
+                <Text style={styles.healthMetricValue}>{dataHealth.missing}</Text>
+                <Text style={styles.healthMetricLabel}>missing</Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {topTracks.length > 0 && (
           <View style={styles.tracksSection}>
@@ -572,6 +673,86 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: theme.colors.darkMuted,
     letterSpacing: 0.5,
+  },
+
+  healthCard: {
+    backgroundColor: theme.colors.darkCard,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  healthHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 12,
+  },
+  healthLabel: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.8,
+  },
+  healthBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: "rgba(66,129,164,0.24)",
+  },
+  healthBadgeWarning: {
+    backgroundColor: "rgba(255,160,122,0.18)",
+  },
+  healthBadgeText: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.secondary,
+    letterSpacing: 0.3,
+  },
+  healthBadgeTextWarning: {
+    color: "#FFA07A",
+  },
+  healthTitle: {
+    fontFamily: theme.fonts.sansBoldItalic,
+    fontSize: theme.fontSizes.subtitle,
+    lineHeight: 26,
+    color: theme.colors.darkText,
+    marginBottom: 6,
+  },
+  healthCopy: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    lineHeight: 20,
+    color: theme.colors.darkMuted,
+    marginBottom: 16,
+  },
+  healthMetrics: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  healthMetric: {
+    flex: 1,
+    minHeight: 64,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: "center",
+  },
+  healthMetricValue: {
+    fontFamily: theme.fonts.sansBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.darkText,
+    marginBottom: 4,
+  },
+  healthMetricLabel: {
+    fontFamily: theme.fonts.ui,
+    fontSize: 8,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
 
   tracksSection: { marginBottom: 24 },
