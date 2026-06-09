@@ -1,11 +1,8 @@
 /*
  * Sign-in screen.
  *
- * Handles username/password authentication, basic validation, and redirects
+ * Handles email/password authentication, basic validation, and redirects
  * users to the correct Fan or Artist experience after sign-in.
- *
- * TODO: Replace the temporary username-to-dummy-email auth flow with real
- * user emails once email validation and Forgot Password are fully supported.
  */
 
 import {
@@ -30,9 +27,9 @@ import { friendlyAuthError } from "@/utils/functions/friendlyAuthError";
 
 export default function SignIn() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [usernameFocused, setUsernameFocused] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,23 +41,27 @@ export default function SignIn() {
   const [hasAttempted, setHasAttempted] = useState(false);
   const [formError, setFormError] = useState("");
 
-  const usernameEmpty = username.trim().length === 0;
-  const passwordEmpty = password.length === 0;
+  const emailEmpty = email.trim().length === 0;
   const passwordTooShort = password.length > 0 && password.length < 6;
-  const isDisabled = loading || usernameEmpty || passwordEmpty;
+  const passwordEmpty = password.length === 0;
+
+  const isDisabled = loading || emailEmpty || passwordEmpty;
 
   // Validate credentials, sign in with Supabase, and route by user role.
   async function signIn() {
     setHasAttempted(true);
     setFormError("");
 
-    if (usernameEmpty || passwordEmpty) return;
+    if (emailEmpty || passwordEmpty) {
+      return;
+    }
 
+    const trimmedEmail = email.trim().toLowerCase();
     setLoading(true);
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email: `${username.trim().toLowerCase()}@mixtape.com`,
+        email: trimmedEmail,
         password,
       });
 
@@ -101,32 +102,33 @@ export default function SignIn() {
           </View>
 
           <View style={styles.fields}>
-            {/* Username */}
+            {/* Email */}
             <View>
               <View
                 style={[
                   styles.inputWrapper,
-                  usernameFocused && styles.inputWrapperFocused,
-                  hasAttempted && usernameEmpty && styles.inputWrapperError,
+                  emailFocused && styles.inputWrapperFocused,
+                  hasAttempted && emailEmpty && styles.inputWrapperError,
                 ]}
               >
-                <Text style={styles.inputLabel}>USERNAME</Text>
+                <Text style={styles.inputLabel}>EMAIL</Text>
                 <TextInput
                   style={styles.input}
-                  value={username}
+                  value={email}
                   onChangeText={(value) => {
-                    setUsername(value);
+                    setEmail(value);
                     setFormError("");
                   }}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  onFocus={() => setUsernameFocused(true)}
-                  onBlur={() => setUsernameFocused(false)}
+                  keyboardType="email-address"
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
                 />
               </View>
 
-              {hasAttempted && usernameEmpty && (
-                <Text style={styles.errorText}>Username is required.</Text>
+              {hasAttempted && emailEmpty && (
+                <Text style={styles.errorText}>Email is required.</Text>
               )}
             </View>
 

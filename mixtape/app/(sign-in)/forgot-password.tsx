@@ -1,11 +1,7 @@
 /*
  * Forgot password screen.
  *
- * Sends a Supabase password reset email using the temporary
- * username-to-dummy-email auth flow.
- *
- * TODO: Replace username-based reset with real user emails so reset links
- * are delivered to actual inboxes.
+ * Sends a Supabase password reset email to the address the user enters.
  */
 import {
   Alert,
@@ -29,41 +25,20 @@ import { friendlyAuthError } from "@/utils/functions/friendlyAuthError";
 
 export default function ForgotPassword() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
-  const [usernameFocused, setUsernameFocused] = useState(false);
-  const [usernameError, setUsernameError] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailFocused, setEmailFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
-  const trimmedUsername = username.trim().toLowerCase();
-  const isDisabled = loading || trimmedUsername.length === 0;
+  const isDisabled = loading || email.trim().length === 0;
 
-  // Send a Supabase password reset email for the entered username.
+  // Send a Supabase password reset email to the entered address.
   async function handleReset() {
-    setUsernameError("");
+    const trimmedEmail = email.trim().toLowerCase();
     setLoading(true);
 
     try {
-      // Check that the username exists before sending a reset email.
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("username", trimmedUsername)
-        .maybeSingle();
-
-      if (profileError) {
-        Alert.alert("Reset failed", friendlyAuthError(profileError.message));
-        return;
-      }
-
-      if (!profile) {
-        setUsernameError("We could not find an account with that username.");
-        return;
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        `${trimmedUsername}@mixtape.com`,
-      );
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
 
       if (error) {
         Alert.alert("Reset failed", friendlyAuthError(error.message));
@@ -146,37 +121,29 @@ export default function ForgotPassword() {
           <View style={styles.header}>
             <Text style={styles.title}>Forgot password?</Text>
             <Text style={styles.subtitle}>
-              Enter your username and we will send a reset link to the email on
-              file.
+              Enter your email and we will send you a reset link.
             </Text>
           </View>
 
           <View style={styles.fields}>
-            <View>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  usernameFocused && styles.inputWrapperFocused,
-                  usernameError.length > 0 && styles.inputWrapperError,
-                ]}
-              >
-                <Text style={styles.inputLabel}>USERNAME</Text>
-                <TextInput
-                  style={styles.input}
-                  value={username}
-                  onChangeText={(text) => {
-                    setUsername(text);
-                    setUsernameError("");
-                  }}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onFocus={() => setUsernameFocused(true)}
-                  onBlur={() => setUsernameFocused(false)}
-                />
-              </View>
-              {usernameError.length > 0 && (
-                <Text style={styles.errorText}>{usernameError}</Text>
-              )}
+            <View
+              style={[
+                styles.inputWrapper,
+                emailFocused && styles.inputWrapperFocused,
+              ]}
+            >
+              <Text style={styles.inputLabel}>EMAIL</Text>
+              <TextInput
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                placeholder=""
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
+              />
             </View>
           </View>
 

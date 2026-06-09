@@ -19,3 +19,8 @@ export function isPasswordStrong(password: string) {
 export function passwordsMatch(password: string, confirmPassword: string) {
   return password === confirmPassword;
 }
+
+// Basic email shape check; Supabase does the authoritative validation.
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}

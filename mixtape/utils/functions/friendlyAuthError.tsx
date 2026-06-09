@@ -15,7 +15,7 @@ export function friendlyAuthError(message: string): string {
   }
 
   if (lower.includes("invalid login credentials")) {
-    return "Wrong username or password. Please try again.";
+    return "Wrong email or password. Please try again.";
   }
 
   if (lower.includes("email not confirmed")) {
@@ -23,7 +23,7 @@ export function friendlyAuthError(message: string): string {
   }
 
   if (lower.includes("user not found")) {
-    return "Account not found. Check your username or create a new account.";
+    return "Account not found. Check your email or create a new account.";
   }
 
   if (lower.includes("too many requests") || lower.includes("rate limit")) {
@@ -31,7 +31,7 @@ export function friendlyAuthError(message: string): string {
   }
 
   if (lower.includes("user already registered")) {
-    return "An account with that username already exists. Try a different one.";
+    return "An account with that email already exists. Try signing in instead.";
   }
 
   return "Something went wrong. Please try again.";

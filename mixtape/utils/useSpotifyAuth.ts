@@ -1,3 +1,13 @@
+/*
+ * Spotify OAuth + listening-data hook.
+ *
+ * Drives the Spotify Authorization Code (PKCE) flow via expo-auth-session,
+ * exchanges the code for an access token, fetches the fan's profile, top
+ * tracks, top artists, and recently played, and persists that snapshot to the
+ * `fan_spotify_data` table. See REDIRECT_URI below for the redirect-URI config
+ * that the Spotify dashboard must match (issue #30).
+ */
+
 import { useEffect, useState } from "react";
 import {
   useAuthRequest,
@@ -6,14 +16,36 @@ import {
 } from "expo-auth-session";
 
 import { supabase } from "@/database/db";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Config
 
-const REDIRECT_URI = makeRedirectUri();
+/*
+ * Spotify requires the redirect URI to EXACTLY match one of the URIs registered
+ * in the Spotify Developer Dashboard. A bare `makeRedirectUri()` derives the URI
+ * from the local Expo dev-server address (e.g. exp://192.168.1.5:8081), which
+ * changes between machines, networks, and runs — causing "INVALID_CLIENT: Invalid
+ * redirect URI" errors (see issue #30).
+ *
+ * To make the redirect stable we, in order of preference:
+ *   1. Use EXPO_PUBLIC_SPOTIFY_REDIRECT_URI when set. Put the exact value you
+ *      registered in the Spotify dashboard here (e.g. a deployed https callback
+ *      or "mixtape://spotify-auth-callback").
+ *   2. Otherwise derive a deterministic URI from the app's own custom scheme
+ *      ("mixtape", declared in app.json), yielding "mixtape://spotify-auth-callback".
+ *      This is stable across runs/devices in a dev or production build.
+ *
+ * Whichever value this resolves to MUST be added to the app's Redirect URIs in
+ * the Spotify Developer Dashboard. Log it once on startup so it is easy to copy.
+ */
+const REDIRECT_URI =
+  process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ??
+  makeRedirectUri({ scheme: "mixtape", path: "spotify-auth-callback" });
 const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID!;
 
-console.log("Redirect URI:", REDIRECT_URI);
-console.log("Client ID:", CLIENT_ID);
+if (__DEV__) {
+  console.log("[Spotify] Redirect URI (register this in the dashboard):", REDIRECT_URI);
+}
 
 const SCOPES = [
   "user-read-email",
@@ -48,6 +80,76 @@ export interface FanSpotifyData {
   recentlyPlayed: SpotifyApi.PlayHistoryObject[];
 }
 
+// Token reuse
+//
+// The OAuth access token lives only in hook state, so once the connect-music
+// screen unmounts there is no way to refresh a fan's listening data without a
+// brand-new OAuth. We persist the most recent access token (Spotify tokens last
+// ~1 hour) so a later step in the same session -- notably share-consent -- can
+// re-sync the fan's data without sending them back through Spotify.
+
+const TOKEN_KEY = "spotify_access_token";
+const TOKEN_AT_KEY = "spotify_access_token_at";
+const TOKEN_MAX_AGE_MS = 55 * 60 * 1000; // stay inside Spotify's ~60m expiry
+
+async function persistAccessToken(token: string): Promise<void> {
+  try {
+    await AsyncStorage.multiSet([
+      [TOKEN_KEY, token],
+      [TOKEN_AT_KEY, String(Date.now())],
+    ]);
+  } catch {
+    // Non-fatal: the token just won't be reusable later.
+  }
+}
+
+// Returns a still-valid stored access token, or null if missing/expired.
+export async function getStoredSpotifyToken(): Promise<string | null> {
+  try {
+    const [[, token], [, at]] = await AsyncStorage.multiGet([
+      TOKEN_KEY,
+      TOKEN_AT_KEY,
+    ]);
+    if (!token || !at) return null;
+    if (Date.now() - Number(at) > TOKEN_MAX_AGE_MS) return null;
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+// Fetch the fan's Spotify listening data and upsert it into Supabase. Shared by
+// the OAuth hook (right after connecting) and the share-consent step (re-sync on
+// the stored token). Returns the fetched data, or null if there is no user.
+export async function syncFanSpotifyData(
+  token: string,
+): Promise<FanSpotifyData | null> {
+  const data = await fetchFanData(token);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return data;
+
+  const { error } = await supabase.from("fan_spotify_data").upsert(
+    {
+      fan_id: user.id,
+      profile: data.profile,
+      top_tracks: data.topTracks,
+      top_artists: data.topArtists,
+      recently_played: data.recentlyPlayed,
+      fetched_at: new Date().toISOString(),
+    },
+    { onConflict: "fan_id" },
+  );
+
+  if (error) {
+    console.error("Failed to save Spotify data:", error.message);
+  } else {
+    console.log("Spotify data saved to Supabase.");
+  }
+  return data;
+}
+
 // Hook
 
 export function useSpotifyAuth() {
@@ -76,6 +178,7 @@ export function useSpotifyAuth() {
           .then((token) => {
             if (token) {
               setAccessToken(token);
+              persistAccessToken(token);
               console.log("Spotify connected. Access token received.");
             } else {
               console.error("Token exchange returned null.");
@@ -95,53 +198,24 @@ export function useSpotifyAuth() {
     }
   }, [response, request]);
 
-  // Step 2: Fetch fan data once we have a token
+  // Step 2: Fetch + persist fan data once we have a token
   useEffect(() => {
     if (!accessToken) return;
 
     setLoading(true);
-    fetchFanData(accessToken)
-      .then(async (data) => {
+    syncFanSpotifyData(accessToken)
+      .then((data) => {
         setFanData(data);
-        console.log("Spotify data fetched successfully.");
-        console.log(
-          "  Profile:",
-          data.profile?.display_name,
-          "-",
-          data.profile?.country,
-        );
-        console.log("  Top tracks:", data.topTracks.length);
-        console.log("  Top artists:", data.topArtists.length);
-        console.log("  Recently played:", data.recentlyPlayed.length);
-
-        // Persist fan listening data to Supabase so the artist dashboard
-        // and fan profile tab can read it later.
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const { error } = await supabase.from("fan_spotify_data").upsert(
-              {
-                fan_id: user.id,
-                profile: data.profile,
-                top_tracks: data.topTracks,
-                top_artists: data.topArtists,
-                recently_played: data.recentlyPlayed,
-                fetched_at: new Date().toISOString(),
-              },
-              { onConflict: "fan_id" },
-            );
-
-            if (error) {
-              console.error("Failed to save Spotify data:", error.message);
-            } else {
-              console.log("Spotify data saved to Supabase.");
-            }
-          }
-        } catch (e: any) {
-          console.error("Failed to persist Spotify data:", e?.message);
+        if (data) {
+          console.log(
+            "Spotify data synced:",
+            data.profile?.display_name,
+            "-",
+            `${data.topTracks.length} tracks, ${data.topArtists.length} artists`,
+          );
         }
       })
-      .catch((e) => console.error("Failed to fetch fan data:", e))
+      .catch((e) => console.error("Failed to sync fan data:", e))
       .finally(() => setLoading(false));
   }, [accessToken]);
 

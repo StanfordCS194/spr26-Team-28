@@ -1,11 +1,8 @@
 /*
  * Account creation screen.
  *
- * Handles new user registration with a temporary username-based Supabase Auth
- * flow, then sends the user into onboarding.
- *
- * TODO: Replace the generated dummy email with real email-based auth once
- * email sign-up is supported.
+ * Registers a new user with Supabase Auth using their real email, stores the
+ * chosen username in user metadata, then sends the user into onboarding.
  */
 
 import {
@@ -29,6 +26,7 @@ import {
   passwordChecks,
   isPasswordStrong,
   passwordsMatch,
+  isValidEmail,
 } from "@/utils/functions/authValidation";
 import { friendlyAuthError } from "@/utils/functions/friendlyAuthError";
 
@@ -36,12 +34,14 @@ export default function MakeAccount() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [nameFocused, setNameFocused] = useState(false);
   const [usernameFocused, setUsernameFocused] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [confirmFocused, setConfirmFocused] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -52,11 +52,13 @@ export default function MakeAccount() {
   const checks = passwordChecks(password);
   const doPasswordsMatch = passwordsMatch(password, confirmPassword);
   const passwordStrong = isPasswordStrong(password);
+  const emailValid = isValidEmail(email);
 
   const isDisabled =
     loading ||
     name.trim().length === 0 ||
     username.trim().length === 0 ||
+    !emailValid ||
     password.length === 0 ||
     confirmPassword.length === 0 ||
     !passwordStrong ||
@@ -67,20 +69,22 @@ export default function MakeAccount() {
     setHasAttempted(true);
     setFormError("");
 
-    if (!passwordStrong || !doPasswordsMatch) {
+    if (!passwordStrong || !doPasswordsMatch || !emailValid) {
       return;
     }
 
     const trimmedUsername = username.trim().toLowerCase();
+    const trimmedEmail = email.trim().toLowerCase();
     setLoading(true);
 
     try {
-      const generatedEmail = `${trimmedUsername}@mixtape.com`;
       const { error } = await db.auth.signUp({
-        email: generatedEmail,
+        email: trimmedEmail,
         password,
         options: {
-          data: { name: name.trim() },
+          // Store the username in metadata; it is no longer derivable from the
+          // email now that we use the user's real address (issue #32).
+          data: { name: name.trim(), username: trimmedUsername },
         },
       });
 
@@ -143,8 +147,8 @@ export default function MakeAccount() {
             <View style={styles.header}>
               <Text style={styles.title}>Create an account.</Text>
               <Text style={styles.subtitle}>
-                Begin by choosing a username and password. You will pick whether
-                you are a Fan or Artist next.
+                Set up your name, username, email, and password. You will pick
+                whether you are a Fan or Artist next.
               </Text>
             </View>
 
@@ -190,6 +194,40 @@ export default function MakeAccount() {
                   onFocus={() => setUsernameFocused(true)}
                   onBlur={() => setUsernameFocused(false)}
                 />
+              </View>
+
+              {/* Email field */}
+              <View>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    emailFocused && styles.inputWrapperFocused,
+                    hasAttempted &&
+                      email.length > 0 &&
+                      !emailValid &&
+                      styles.inputWrapperError,
+                  ]}
+                >
+                  <Text style={styles.inputLabel}>EMAIL</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={email}
+                    onChangeText={(v) => {
+                      setEmail(v);
+                      clearFormError();
+                    }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    onFocus={() => setEmailFocused(true)}
+                    onBlur={() => setEmailFocused(false)}
+                  />
+                </View>
+                {hasAttempted && email.length > 0 && !emailValid && (
+                  <Text style={styles.errorText}>
+                    Enter a valid email address.
+                  </Text>
+                )}
               </View>
 
               {/* Password field with show/hide toggle */}

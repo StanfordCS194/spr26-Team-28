@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 
 import { supabase } from "@/database/db";
+import { getStoredSpotifyToken, syncFanSpotifyData } from "@/utils/useSpotifyAuth";
 import theme from "@/assets/theme";
 
 const SHARED_ITEMS = [
@@ -72,22 +73,32 @@ export default function ShareConsent() {
         return;
       }
 
-      const { error } = await supabase.from("fan_follows").upsert({
-        fan_id: user.id,
-        artist_id: artistId,
-        consented_at: new Date().toISOString(),
-        top_track: topTrack || null,
-      });
+      const { error } = await supabase.from("fan_follows").upsert(
+        {
+          fan_id: user.id,
+          artist_id: artistId,
+          consented_at: new Date().toISOString(),
+          top_track: topTrack || null,
+        },
+        // Re-consenting updates the existing row instead of inserting a
+        // duplicate (relies on the UNIQUE(fan_id, artist_id) constraint).
+        { onConflict: "fan_id,artist_id" },
+      );
 
       if (error) {
         Alert.alert("Error", error.message);
         return;
       }
 
-      // TODO: trigger Spotify data fetch + store in Supabase here
-      // await storeFanSpotifyData(user.id, fanData);
+      // Best-effort: if the fan connected Spotify recently, re-sync their
+      // listening data so the artist sees current data. Fire-and-forget so it
+      // never blocks finishing consent -- a missing or expired token just means
+      // no refresh happens here (their connect-music sync still stands).
+      getStoredSpotifyToken()
+        .then((token) => (token ? syncFanSpotifyData(token) : null))
+        .catch((e) => console.warn("Spotify re-sync on consent skipped:", e));
 
-      console.log(`✅ Fan consented to share with ${artistName}`);
+      console.log(`Fan consented to share with ${artistName}`);
       router.replace("/(tabs)");
     } catch (error: any) {
       Alert.alert("Network error", error.message ?? "Something went wrong");
