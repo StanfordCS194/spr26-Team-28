@@ -1,5 +1,11 @@
+/*
+ * Sign-in screen.
+ *
+ * Handles email/password authentication, basic validation, and redirects
+ * users to the correct Fan or Artist experience after sign-in.
+ */
+
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,26 +21,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 
 import { supabase } from "@/database/db";
-import { navigateByRole } from "@/utils/navigateByRole";
+import { navigateByRole } from "@/utils/functions/navigateByRole";
 import theme from "@/assets/theme";
-
-// Map Supabase auth error messages to user-friendly text.
-function friendlyError(message: string): string {
-  const lower = message.toLowerCase();
-  if (lower.includes("invalid login credentials")) {
-    return "Wrong email or password. Please try again.";
-  }
-  if (lower.includes("email not confirmed")) {
-    return "Your account has not been confirmed yet.";
-  }
-  if (lower.includes("user not found")) {
-    return "Account not found. Check your email or create a new account.";
-  }
-  if (lower.includes("too many requests") || lower.includes("rate limit")) {
-    return "Too many attempts. Please wait a moment and try again.";
-  }
-  return message;
-}
+import { friendlyAuthError } from "@/utils/functions/friendlyAuthError";
 
 export default function SignIn() {
   const router = useRouter();
@@ -42,12 +31,15 @@ export default function SignIn() {
   const [password, setPassword] = useState("");
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Track whether the user has attempted to submit at least once,
-  // so we only show validation errors after the first try.
+  /*
+   * Track whether the user has attempted to submit at least once,
+   * so we only show validation errors after the first try.
+   */
   const [hasAttempted, setHasAttempted] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const emailEmpty = email.trim().length === 0;
   const passwordTooShort = password.length > 0 && password.length < 6;
@@ -55,8 +47,10 @@ export default function SignIn() {
 
   const isDisabled = loading || emailEmpty || passwordEmpty;
 
+  // Validate credentials, sign in with Supabase, and route by user role.
   async function signIn() {
     setHasAttempted(true);
+    setFormError("");
 
     if (emailEmpty || passwordEmpty) {
       return;
@@ -64,6 +58,7 @@ export default function SignIn() {
 
     const trimmedEmail = email.trim().toLowerCase();
     setLoading(true);
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
@@ -71,13 +66,13 @@ export default function SignIn() {
       });
 
       if (error) {
-        Alert.alert("Sign in failed", friendlyError(error.message));
+        setFormError(friendlyAuthError(error.message));
         return;
       }
 
       await navigateByRole(router);
     } catch (error: any) {
-      Alert.alert("Network error", error.message ?? "Something went wrong");
+      setFormError(friendlyAuthError(error?.message ?? ""));
     } finally {
       setLoading(false);
     }
@@ -107,6 +102,7 @@ export default function SignIn() {
           </View>
 
           <View style={styles.fields}>
+            {/* Email */}
             <View>
               <View
                 style={[
@@ -119,62 +115,76 @@ export default function SignIn() {
                 <TextInput
                   style={styles.input}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(value) => {
+                    setEmail(value);
+                    setFormError("");
+                  }}
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="email-address"
-                  placeholder=""
                   onFocus={() => setEmailFocused(true)}
                   onBlur={() => setEmailFocused(false)}
                 />
               </View>
+
               {hasAttempted && emailEmpty && (
                 <Text style={styles.errorText}>Email is required.</Text>
               )}
             </View>
 
+            {/* Password */}
             <View>
               <View
                 style={[
                   styles.inputWrapper,
+                  styles.passwordWrapper,
                   passwordFocused && styles.inputWrapperFocused,
                   hasAttempted && passwordEmpty && styles.inputWrapperError,
                 ]}
               >
                 <Text style={styles.inputLabel}>PASSWORD</Text>
-                <View style={styles.passwordRow}>
-                  <TextInput
-                    style={[styles.input, styles.passwordInput]}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    placeholder=""
-                    onFocus={() => setPasswordFocused(true)}
-                    onBlur={() => setPasswordFocused(false)}
+
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={password}
+                  onChangeText={(value) => {
+                    setPassword(value);
+                    setFormError("");
+                  }}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => setPasswordFocused(false)}
+                />
+
+                <Pressable
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword((s) => !s)}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={25}
+                    color={theme.colors.muted}
                   />
-                  <Pressable
-                    onPress={() => setShowPassword(!showPassword)}
-                    hitSlop={8}
-                  >
-                    <Ionicons
-                      name={showPassword ? "eye-off-outline" : "eye-outline"}
-                      size={20}
-                      color={theme.colors.muted}
-                    />
-                  </Pressable>
-                </View>
+                </Pressable>
               </View>
+
               {hasAttempted && passwordEmpty && (
                 <Text style={styles.errorText}>Password is required.</Text>
               )}
-              {hasAttempted && passwordTooShort && (
+
+              {passwordTooShort && (
                 <Text style={styles.errorText}>
                   Password must be at least 6 characters.
                 </Text>
               )}
             </View>
           </View>
+
+          {formError.length > 0 && (
+            <Text style={styles.formErrorText}>{formError}</Text>
+          )}
 
           <Pressable
             style={styles.forgotLink}
@@ -212,9 +222,18 @@ export default function SignIn() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  keyboardView: { flex: 1 },
-  scrollContent: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 8 },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
   back: {
     width: 36,
     height: 36,
@@ -224,7 +243,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 24,
   },
-  header: { marginTop: 10, marginBottom: 32 },
+  header: {
+    marginTop: 10,
+    marginBottom: 32,
+  },
   title: {
     fontFamily: theme.fonts.sansBoldItalic,
     fontSize: theme.fontSizes.title,
@@ -238,8 +260,13 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     color: theme.colors.muted,
   },
-  fields: { gap: 30 },
-  spacer: { flex: 1, minHeight: 40 },
+  fields: {
+    gap: 30,
+  },
+  spacer: {
+    flex: 1,
+    minHeight: 40,
+  },
   inputWrapper: {
     borderWidth: 1.5,
     borderColor: theme.colors.border,
@@ -249,14 +276,9 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     backgroundColor: theme.colors.background,
   },
-  inputWrapperFocused: { borderColor: theme.colors.text },
-  inputWrapperError: { borderColor: theme.colors.danger },
-  inputLabel: {
-    fontFamily: theme.fonts.sansMedium,
-    fontSize: theme.fontSizes.tiny,
-    color: theme.colors.muted,
-    letterSpacing: 0.8,
-    marginBottom: 4,
+  passwordWrapper: {
+    position: "relative",
+    paddingRight: 48,
   },
   input: {
     fontFamily: theme.fonts.sans,
@@ -264,12 +286,28 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     padding: 0,
   },
-  passwordRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
   passwordInput: {
-    flex: 1,
+    paddingRight: 8,
+  },
+  eyeButton: {
+    position: "absolute",
+    right: 22,
+    bottom: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inputWrapperFocused: {
+    borderColor: theme.colors.text,
+  },
+  inputWrapperError: {
+    borderColor: theme.colors.danger,
+  },
+  inputLabel: {
+    fontFamily: theme.fonts.sansMedium,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.muted,
+    letterSpacing: 0.8,
+    marginBottom: 4,
   },
   errorText: {
     fontFamily: theme.fonts.sans,
@@ -277,6 +315,14 @@ const styles = StyleSheet.create({
     color: theme.colors.danger,
     marginTop: 6,
     marginLeft: 16,
+  },
+  formErrorText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.danger,
+    textAlign: "center",
+    marginTop: 16,
+    paddingHorizontal: 12,
   },
   forgotLink: {
     alignSelf: "center",
@@ -303,8 +349,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
-  buttonPressed: { backgroundColor: theme.colors.text },
-  buttonDisabled: { opacity: 0.4 },
+  buttonPressed: {
+    backgroundColor: theme.colors.text,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
   buttonLabel: {
     fontFamily: theme.fonts.ui,
     fontSize: theme.fontSizes.button,

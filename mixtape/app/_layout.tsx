@@ -20,7 +20,7 @@ export default function RootLayout() {
   const hideSplashRef = useRef(false);
 
   // Load fonts and the splash screen
-  const [fontsLoaded, fontError] = useFonts({
+  const [fontsLoaded] = useFonts({
     Spectral: require("../assets/Fonts/Spectral/Spectral-Regular.ttf"),
     "Spectral-Medium": require("../assets/Fonts/Spectral/Spectral-Medium.ttf"),
     "Spectral-SemiBold": require("../assets/Fonts/Spectral/Spectral-SemiBold.ttf"),

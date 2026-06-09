@@ -1,3 +1,8 @@
+/*
+ * Forgot password screen.
+ *
+ * Sends a Supabase password reset email to the address the user enters.
+ */
 import {
   Alert,
   KeyboardAvoidingView,
@@ -16,6 +21,7 @@ import { useState } from "react";
 
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
+import { friendlyAuthError } from "@/utils/functions/friendlyAuthError";
 
 export default function ForgotPassword() {
   const router = useRouter();
@@ -26,16 +32,16 @@ export default function ForgotPassword() {
 
   const isDisabled = loading || email.trim().length === 0;
 
+  // Send a Supabase password reset email to the entered address.
   async function handleReset() {
     const trimmedEmail = email.trim().toLowerCase();
     setLoading(true);
+
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        trimmedEmail
-      );
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
 
       if (error) {
-        Alert.alert("Reset failed", error.message);
+        Alert.alert("Reset failed", friendlyAuthError(error.message));
         return;
       }
 
@@ -51,12 +57,11 @@ export default function ForgotPassword() {
   if (sent) {
     return (
       <SafeAreaView style={styles.container}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <Pressable style={styles.back} onPress={() => router.back()}>
+        <View style={styles.successScreen}>
+          <Pressable
+            style={styles.back}
+            onPress={() => router.replace("/(sign-in)/sign-in")}
+          >
             <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
           </Pressable>
 
@@ -72,7 +77,7 @@ export default function ForgotPassword() {
               account. It may take a minute to arrive.
             </Text>
           </View>
-        </ScrollView>
+        </View>
 
         <View style={styles.footer}>
           <Pressable
@@ -106,7 +111,10 @@ export default function ForgotPassword() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Pressable style={styles.back} onPress={() => router.back()}>
+          <Pressable
+            style={styles.back}
+            onPress={() => router.replace("/(sign-in)/sign-in")}
+          >
             <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
           </Pressable>
 
@@ -180,6 +188,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 8,
   },
+  successScreen: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
   back: {
     width: 36,
     height: 36,
@@ -225,6 +238,9 @@ const styles = StyleSheet.create({
   inputWrapperFocused: {
     borderColor: theme.colors.text,
   },
+  inputWrapperError: {
+    borderColor: theme.colors.danger,
+  },
   inputLabel: {
     fontFamily: theme.fonts.sansMedium,
     fontSize: theme.fontSizes.tiny,
@@ -237,6 +253,13 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.subtitle,
     color: theme.colors.text,
     padding: 0,
+  },
+  errorText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    color: theme.colors.danger,
+    marginTop: 6,
+    marginLeft: 16,
   },
   footer: {
     paddingHorizontal: 24,
@@ -270,6 +293,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 32,
+    paddingBottom: 60,
     gap: 16,
   },
   successTitle: {
