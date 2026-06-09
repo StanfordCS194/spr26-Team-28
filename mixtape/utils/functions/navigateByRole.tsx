@@ -9,24 +9,35 @@
 import { Router } from "expo-router";
 import { supabase } from "@/database/db";
 
+type RoleDestination = "/(artist-tabs)" | "/(tabs)";
+
 /**
  * Fetches the current user's role from the profiles table
- * and navigates to the correct tab group.
+ * and returns the correct tab group.
  * - fan   → /(tabs)
  * - artist → /(artist-tabs)
  */
-export async function navigateByRole(router: Router): Promise<void> {
+export async function getRoleDestination(): Promise<RoleDestination | null> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) return null;
 
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
-  const destination = profile?.role === "artist" ? "/(artist-tabs)" : "/(tabs)";
-  router.replace(destination as any);
+  return profile?.role === "artist" ? "/(artist-tabs)" : "/(tabs)";
+}
+
+/**
+ * Navigates to the correct tab group after sign-in or account setup.
+ */
+export async function navigateByRole(router: Router): Promise<void> {
+  const destination = await getRoleDestination();
+  if (destination) {
+    router.replace(destination as any);
+  }
 }
