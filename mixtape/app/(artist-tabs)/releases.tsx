@@ -48,6 +48,11 @@ function colorForType(t: string): string {
   return "rgba(255,255,255,0.15)";
 }
 
+function parseTrackCount(value: string): number {
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
 export default function ReleasesTab() {
   const mounted = useRef(true);
   const [releases, setReleases] = useState<Release[]>([]);
@@ -105,14 +110,9 @@ export default function ReleasesTab() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Use the entered track count; fall back to 1 for singles, 0 otherwise.
-      const parsedTracks = parseInt(newTracks, 10);
-      const trackCount =
-        Number.isFinite(parsedTracks) && parsedTracks > 0
-          ? parsedTracks
-          : newType === "single"
-            ? 1
-            : 0;
+      // Always send a positive integer to the integer column. An empty string
+      // from the numeric input should never reach Supabase.
+      const trackCount = parseTrackCount(newTracks);
 
       const { data, error } = await supabase
         .from("releases")
@@ -197,6 +197,7 @@ export default function ReleasesTab() {
               style={styles.formInput}
               value={newTracks}
               onChangeText={(t) => setNewTracks(t.replace(/[^0-9]/g, ""))}
+              onBlur={() => setNewTracks(String(parseTrackCount(newTracks)))}
               placeholder="Number of tracks"
               placeholderTextColor={theme.colors.darkMuted}
               keyboardType="number-pad"

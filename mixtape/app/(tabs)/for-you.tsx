@@ -102,8 +102,12 @@ export default function ForYouTab() {
   function handleArtistPress(artist: Artist) {
     if (followedIds.has(artist.id)) return;
     router.push({
-      pathname: "/(sign-in)/share-consent",
-      params: { artistId: artist.id, artistName: artist.name },
+      pathname: "/(sign-in)/favorite-song",
+      params: {
+        artistId: artist.id,
+        artistName: artist.name,
+        artistUsername: artist.username,
+      },
     });
   }
 

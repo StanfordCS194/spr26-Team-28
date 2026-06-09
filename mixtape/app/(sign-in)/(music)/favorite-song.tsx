@@ -5,7 +5,7 @@
  * Sits between follow-artist and share-consent in the onboarding flow.
  *
  * Receives: artistId, artistName, artistUsername
- * Passes:   all of the above + topTrack → share-consent
+ * Passes:   all of the above + topTrack -> share-consent
  */
 
 import {
@@ -21,9 +21,22 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
+
+interface Release {
+  id: string;
+  title: string;
+  release_type: "single" | "ep" | "album" | string;
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  single: "Single",
+  ep: "EP",
+  album: "Album",
+};
 
 export default function FavoriteSong() {
   const router = useRouter();
@@ -34,9 +47,40 @@ export default function FavoriteSong() {
   }>();
 
   const [song, setSong] = useState("");
+  const [releases, setReleases] = useState<Release[]>([]);
+  const [loadingReleases, setLoadingReleases] = useState(false);
   const [focused, setFocused] = useState(false);
 
   const firstName = artistName?.split(" ")[0] ?? "this artist";
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadReleases() {
+      if (!artistId) return;
+      setLoadingReleases(true);
+      try {
+        const { data, error } = await supabase
+          .from("releases")
+          .select("id, title, release_type")
+          .eq("artist_id", artistId)
+          .eq("release_type", "single")
+          .order("release_date", { ascending: false });
+
+        if (error) {
+          if (mounted) setReleases([]);
+          return;
+        }
+
+        if (mounted) setReleases((data as Release[]) ?? []);
+      } finally {
+        if (mounted) setLoadingReleases(false);
+      }
+    }
+
+    loadReleases();
+    return () => { mounted = false; };
+  }, [artistId]);
 
   function handleContinue() {
     router.push({
@@ -99,6 +143,48 @@ export default function FavoriteSong() {
             </Text>
           </View>
 
+          {releases.length > 0 && (
+            <View style={styles.releasesSection}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionLabel}>SINGLES BY {firstName.toUpperCase()}</Text>
+                {loadingReleases && (
+                  <Text style={styles.sectionMeta}>Loading...</Text>
+                )}
+              </View>
+              {releases.map((release) => {
+                const selected = song.trim() === release.title;
+                return (
+                  <Pressable
+                    key={release.id}
+                    style={[styles.releaseRow, selected && styles.releaseRowSelected]}
+                    onPress={() => setSong(release.title)}
+                  >
+                    <View style={styles.releaseIcon}>
+                      <Ionicons
+                        name="disc-outline"
+                        size={16}
+                        color={selected ? theme.colors.text : theme.colors.muted}
+                      />
+                    </View>
+                    <View style={styles.releaseInfo}>
+                      <Text style={styles.releaseTitle}>{release.title}</Text>
+                      <Text style={styles.releaseType}>
+                        {TYPE_LABELS[release.release_type] ?? release.release_type}
+                      </Text>
+                    </View>
+                    {selected && (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={18}
+                        color={theme.colors.primary}
+                      />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
           {/* Input */}
           <View
             style={[
@@ -111,7 +197,7 @@ export default function FavoriteSong() {
               style={styles.input}
               value={song}
               onChangeText={setSong}
-              placeholder={`A song by ${firstName}…`}
+              placeholder={`A song by ${firstName}...`}
               placeholderTextColor={theme.colors.muted}
               autoCorrect={false}
               onFocus={() => setFocused(true)}
@@ -179,6 +265,65 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.body,
     lineHeight: 26,
     color: theme.colors.muted,
+  },
+  releasesSection: {
+    marginBottom: 18,
+    gap: 8,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 2,
+  },
+  sectionLabel: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.muted,
+    letterSpacing: 0.8,
+  },
+  sectionMeta: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.muted,
+  },
+  releaseRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 58,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: theme.colors.card,
+  },
+  releaseRowSelected: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.background,
+  },
+  releaseIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.background,
+  },
+  releaseInfo: { flex: 1 },
+  releaseTitle: {
+    fontFamily: theme.fonts.sansSemiBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  releaseType: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.muted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
   inputWrapper: {
     borderWidth: 1.5,
