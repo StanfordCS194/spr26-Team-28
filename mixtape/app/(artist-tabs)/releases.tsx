@@ -1,3 +1,15 @@
+/*
+ * Artist RELEASES tab.
+ *
+ * Lists the signed-in artist's releases (from the `releases` table) and lets
+ * them add a new single/EP/album with a title, type, track count, and genres.
+ *
+ * After every save, recomputeGenreVector() tallies genre frequencies across
+ * all the artist's releases and upserts a normalised weight map to
+ * profiles.genre_vector — e.g. {"pop": 0.6, "indie": 0.4}.  That vector is
+ * what collaborate.tsx uses for cosine-similarity recommendations.
+ */
+
 import {
   Alert,
   Pressable,
@@ -14,16 +26,70 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
 
+interface Genre {
+  id: number;
+  name: string;
+  slug: string;
+}
+
 interface Release {
   id: string;
   title: string;
   album_title: string | null;
   track_count: number;
   fan_count: number;
+  genre_ids: number[];
+}
+
+function parseTrackCount(value: string): number {
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+// Recomputes the artist's genre_vector from all their releases and upserts it
+// to profiles. Weights are the fraction of releases that include each genre.
+async function recomputeGenreVector(userId: string) {
+  const { data: releases, error } = await supabase
+    .from("releases")
+    .select("genre_ids")
+    .eq("artist_id", userId);
+
+  if (error || !releases || releases.length === 0) return;
+
+  // Count how many releases include each genre id.
+  const counts: Record<number, number> = {};
+  for (const r of releases) {
+    for (const gid of r.genre_ids ?? []) {
+      counts[gid] = (counts[gid] ?? 0) + 1;
+    }
+  }
+
+  if (Object.keys(counts).length === 0) return;
+
+  // Fetch the slug for each genre id we saw so we can key the vector by slug.
+  const ids = Object.keys(counts).map(Number);
+  const { data: genres, error: genreError } = await supabase
+    .from("genres")
+    .select("id, slug")
+    .in("id", ids);
+
+  if (genreError || !genres) return;
+
+  const total = releases.length;
+  const vector: Record<string, number> = {};
+  for (const g of genres) {
+    vector[g.slug] = parseFloat(((counts[g.id] ?? 0) / total).toFixed(4));
+  }
+
+  await supabase
+    .from("profiles")
+    .update({ genre_vector: vector })
+    .eq("id", userId);
 }
 
 export default function ReleasesTab() {
   const mounted = useRef(true);
+  const [genres, setGenres] = useState<Genre[]>([]);
   const [releases, setReleases] = useState<Release[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -32,13 +98,26 @@ export default function ReleasesTab() {
   const [newTitle, setNewTitle] = useState("");
   const [newKind, setNewKind] = useState<"single" | "album">("single");
   const [newAlbumTitle, setNewAlbumTitle] = useState("");
+  const [newTracks, setNewTracks] = useState("");
+  const [newGenreIds, setNewGenreIds] = useState<number[]>([]);
 
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
 
-  useEffect(() => { loadReleases(); }, []);
+  useEffect(() => {
+    loadGenres();
+    loadReleases();
+  }, []);
+
+  async function loadGenres() {
+    const { data } = await supabase
+      .from("genres")
+      .select("id, name, slug")
+      .order("name");
+    if (data && mounted.current) setGenres(data as Genre[]);
+  }
 
   async function loadReleases() {
     setLoading(true);
@@ -46,15 +125,10 @@ export default function ReleasesTab() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || !mounted.current) return;
 
-      let releasesRes: any = await supabase
-        .from("releases")
-        .select("id, title, release_type, album_title, track_count, genre_ids")
-        .eq("artist_id", user.id);
-
-      if (isMissingColumn(releasesRes.error, "release_type")) {
-        releasesRes = await supabase
+      const [releasesRes, followsRes] = await Promise.all([
+        supabase
           .from("releases")
-          .select("id, title, album_title, track_count")
+          .select("id, title, album_title, track_count, genre_ids")
           .eq("artist_id", user.id),
         supabase
           .from("fan_follows")
@@ -63,12 +137,16 @@ export default function ReleasesTab() {
           .not("top_track", "is", null),
       ]);
 
-      if (releasesRes.error && releasesRes.error.code !== "PGRST116" && releasesRes.error.code !== "42P01") {
+      if (
+        releasesRes.error &&
+        releasesRes.error.code !== "PGRST116" &&
+        releasesRes.error.code !== "42P01"
+      ) {
         Alert.alert("Error", releasesRes.error.message);
         return;
       }
 
-      const rawReleases = (releasesRes.data ?? []) as RawRelease[];
+      const rawReleases = (releasesRes.data ?? []) as Omit<Release, "fan_count">[];
 
       const fanCounts: Record<string, number> = {};
       for (const row of followsRes.data ?? []) {
@@ -79,6 +157,7 @@ export default function ReleasesTab() {
 
       const withCounts: Release[] = rawReleases.map((r) => ({
         ...r,
+        genre_ids: r.genre_ids ?? [],
         fan_count: fanCounts[r.title] ?? 0,
       }));
 
@@ -87,7 +166,7 @@ export default function ReleasesTab() {
       );
 
       if (mounted.current) setReleases(withCounts);
-    } catch (e: any) {
+    } catch {
       // releases table may not exist yet
     } finally {
       if (mounted.current) setLoading(false);
@@ -102,38 +181,40 @@ export default function ReleasesTab() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      const trackCount = parseTrackCount(newTracks);
+
       const { data, error } = await supabase
         .from("releases")
         .insert({
           artist_id: user.id,
           title: newTitle.trim(),
           album_title: newKind === "album" ? newAlbumTitle.trim() : null,
-          track_count: newKind === "single" ? 1 : 0,
+          track_count: newKind === "single" ? 1 : trackCount,
+          genre_ids: newGenreIds,
         })
         .select()
         .single();
-
-      if (isMissingColumn(error, "release_type")) {
-        const { release_type, ...legacyPayload } = payload;
-        const legacyResult = await supabase
-          .from("releases")
-          .insert(legacyPayload)
-          .select()
-          .single();
-        data = legacyResult.data;
-        error = legacyResult.error;
-      }
 
       if (error) {
         Alert.alert("Error", error.message);
         return;
       }
+
       if (data && mounted.current) {
-        setReleases((prev) => [...prev, { ...(data as Omit<Release, "fan_count">), fan_count: 0 }]);
+        setReleases((prev) => [
+          ...prev,
+          { ...(data as Omit<Release, "fan_count">), fan_count: 0 },
+        ]);
       }
+
+      // Recompute and upsert the genre vector in the background.
+      recomputeGenreVector(user.id);
+
       setNewTitle("");
       setNewKind("single");
       setNewAlbumTitle("");
+      setNewTracks("");
+      setNewGenreIds([]);
       setAdding(false);
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not save release.");
@@ -147,9 +228,21 @@ export default function ReleasesTab() {
     setNewTitle("");
     setNewKind("single");
     setNewAlbumTitle("");
+    setNewTracks("");
+    setNewGenreIds([]);
   }
 
-  const canSave = !!newTitle.trim() && (newKind === "single" || !!newAlbumTitle.trim());
+  function toggleGenre(id: number) {
+    setNewGenreIds((prev) =>
+      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]
+    );
+  }
+
+  // Genre slugs for display on release cards.
+  const genreById = Object.fromEntries(genres.map((g) => [g.id, g]));
+
+  const canSave =
+    !!newTitle.trim() && (newKind === "single" || !!newAlbumTitle.trim());
 
   return (
     <SafeAreaView style={styles.container}>
@@ -179,20 +272,33 @@ export default function ReleasesTab() {
               {(["single", "album"] as const).map((k) => (
                 <Pressable
                   key={k}
-                  style={[styles.typeChip, newKind === k && styles.typeChipSelected]}
-                  onPress={() => { setNewKind(k); setNewAlbumTitle(""); }}
+                  style={[
+                    styles.typeChip,
+                    newKind === k && styles.typeChipSelected,
+                  ]}
+                  onPress={() => {
+                    setNewKind(k);
+                    setNewAlbumTitle("");
+                  }}
                 >
-                  <Text style={[styles.typeChipText, newKind === k && styles.typeChipTextSelected]}>
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      newKind === k && styles.typeChipTextSelected,
+                    ]}
+                  >
                     {k === "single" ? "Single" : "Album"}
                   </Text>
                 </Pressable>
               ))}
             </View>
 
-            {/* Album title — only when album is selected */}
+            {/* Album title */}
             {newKind === "album" && (
               <>
-                <Text style={[styles.formLabel, { marginTop: 14 }]}>ALBUM TITLE</Text>
+                <Text style={[styles.formLabel, { marginTop: 14 }]}>
+                  ALBUM TITLE
+                </Text>
                 <TextInput
                   style={styles.formInput}
                   value={newAlbumTitle}
@@ -217,17 +323,55 @@ export default function ReleasesTab() {
               autoFocus={newKind === "single"}
             />
 
+            {/* Genre picker */}
+            <Text style={[styles.formLabel, { marginTop: 14 }]}>
+              GENRES <Text style={styles.formLabelOptional}>(optional)</Text>
+            </Text>
+            <View style={styles.genreGrid}>
+              {genres.map((g) => {
+                const selected = newGenreIds.includes(g.id);
+                return (
+                  <Pressable
+                    key={g.id}
+                    style={[
+                      styles.genreChip,
+                      selected && styles.genreChipSelected,
+                    ]}
+                    onPress={() => toggleGenre(g.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.genreChipText,
+                        selected && styles.genreChipTextSelected,
+                      ]}
+                    >
+                      {g.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
             <View style={styles.formActions}>
               <Pressable style={styles.formCancel} onPress={cancelForm}>
                 <Text style={styles.formCancelText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[styles.formSave, (!canSave || saving) && { opacity: 0.5 }]}
+                style={[
+                  styles.formSave,
+                  (!canSave || saving) && { opacity: 0.5 },
+                ]}
                 onPress={saveRelease}
                 disabled={!canSave || saving}
               >
-                <Ionicons name="checkmark" size={16} color={theme.colors.darkText} />
-                <Text style={styles.formSaveText}>{saving ? "Saving..." : "Save"}</Text>
+                <Ionicons
+                  name="checkmark"
+                  size={16}
+                  color={theme.colors.darkText}
+                />
+                <Text style={styles.formSaveText}>
+                  {saving ? "Saving..." : "Save"}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -237,43 +381,92 @@ export default function ReleasesTab() {
           releases.map((release) => (
             <View key={release.id} style={styles.releaseCard}>
               <View style={styles.releaseTop}>
-                <View style={[styles.artPlaceholder, { borderColor: release.album_title ? theme.colors.secondary : "rgba(255,255,255,0.15)" }]}>
-                  <Ionicons name="disc-outline" size={24} color={theme.colors.darkMuted} />
+                <View
+                  style={[
+                    styles.artPlaceholder,
+                    {
+                      borderColor: release.album_title
+                        ? theme.colors.secondary
+                        : "rgba(255,255,255,0.15)",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="disc-outline"
+                    size={24}
+                    color={theme.colors.darkMuted}
+                  />
                 </View>
                 <View style={styles.releaseInfo}>
                   <Text style={styles.releaseTitle}>{release.title}</Text>
                   <View style={styles.releaseMeta}>
-                    <View style={[styles.typeBadge, { backgroundColor: release.album_title ? theme.colors.secondary : "rgba(255,255,255,0.15)" }]}>
+                    <View
+                      style={[
+                        styles.typeBadge,
+                        {
+                          backgroundColor: release.album_title
+                            ? theme.colors.secondary
+                            : "rgba(255,255,255,0.15)",
+                        },
+                      ]}
+                    >
                       <Text style={styles.typeBadgeText}>
                         {release.album_title ? release.album_title : "Single"}
                       </Text>
                     </View>
                     {release.fan_count > 0 && (
                       <Text style={styles.fanCount}>
-                        {release.fan_count} {release.fan_count === 1 ? "fan" : "fans"}
+                        {release.fan_count}{" "}
+                        {release.fan_count === 1 ? "fan" : "fans"}
                       </Text>
                     )}
                   </View>
                 </View>
               </View>
+
               {release.track_count > 0 && (
                 <Text style={styles.trackCount}>
-                  {release.track_count} {release.track_count === 1 ? "track" : "tracks"}
+                  {release.track_count}{" "}
+                  {release.track_count === 1 ? "track" : "tracks"}
                 </Text>
+              )}
+
+              {release.genre_ids.length > 0 && (
+                <View style={styles.releaseGenreRow}>
+                  {release.genre_ids.map((gid) => {
+                    const g = genreById[gid];
+                    if (!g) return null;
+                    return (
+                      <View key={gid} style={styles.releaseGenreChip}>
+                        <Text style={styles.releaseGenreText}>{g.name}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
               )}
             </View>
           ))
         ) : !loading ? (
           <View style={styles.emptyState}>
-            <Ionicons name="disc-outline" size={36} color={theme.colors.darkMuted} />
+            <Ionicons
+              name="disc-outline"
+              size={36}
+              color={theme.colors.darkMuted}
+            />
             <Text style={styles.emptyTitle}>No releases yet</Text>
             <Text style={styles.emptyText}>
-              Add your singles, EPs, and albums to track how fans engage with your music.
+              Add your singles, EPs, and albums to track how fans engage with
+              your music.
             </Text>
             {!adding && (
-              <Pressable style={styles.emptyAddBtn} onPress={() => setAdding(true)}>
+              <Pressable
+                style={styles.emptyAddBtn}
+                onPress={() => setAdding(true)}
+              >
                 <Ionicons name="add" size={16} color={theme.colors.darkText} />
-                <Text style={styles.emptyAddBtnText}>Add your first release</Text>
+                <Text style={styles.emptyAddBtnText}>
+                  Add your first release
+                </Text>
               </Pressable>
             )}
           </View>
@@ -334,6 +527,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 8,
   },
+  formLabelOptional: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0,
+    opacity: 0.5,
+    textTransform: "none",
+  },
   formInput: {
     fontFamily: theme.fonts.sans,
     fontSize: theme.fontSizes.body,
@@ -367,6 +568,33 @@ const styles = StyleSheet.create({
   typeChipTextSelected: {
     color: theme.colors.primary,
   },
+
+  genreGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  genreChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  genreChipSelected: {
+    borderColor: theme.colors.secondary,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  genreChipText: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0,
+  },
+  genreChipTextSelected: {
+    color: theme.colors.secondary,
+  },
+
   formActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -458,6 +686,27 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.06)",
+  },
+  releaseGenreRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.06)",
+  },
+  releaseGenreChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  releaseGenreText: {
+    fontFamily: theme.fonts.ui,
+    fontSize: 9,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.3,
   },
 
   emptyState: {
