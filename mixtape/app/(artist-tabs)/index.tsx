@@ -16,6 +16,12 @@ interface TrackTally {
   growthPct: number | null;
 }
 
+interface CityTally {
+  label: string;
+  count: number;
+  sharePct: number;
+}
+
 const RECENT_SHARE_WINDOW_DAYS = 7;
 
 function ListenerChart({ points }: { points: { label: string; count: number }[] }) {
@@ -113,6 +119,14 @@ function formatNumber(n: number): string {
   return n.toString();
 }
 
+function formatShareAge(days: number | null): string {
+  if (days == null) return "--";
+  if (days < 1) return "today";
+  if (days < 30) return `${Math.round(days)}d`;
+  if (days < 365) return `${Math.round(days / 30)}mo`;
+  return `${Math.round(days / 365)}y`;
+}
+
 const GENRE_COLORS = [
   "rgba(230,139,133,0.85)", // primary (rose)
   "rgba(66,129,164,0.85)",  // secondary (blue)
@@ -138,6 +152,8 @@ export default function ArtistInsights() {
   const [consentedDates, setConsentedDates] = useState<string[]>([]);
   const [topTracks, setTopTracks] = useState<TrackTally[]>([]);
   const [topGenres, setTopGenres] = useState<{ slug: string; weight: number }[]>([]);
+  const [topCities, setTopCities] = useState<CityTally[]>([]);
+  const [avgShareAgeDays, setAvgShareAgeDays] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -197,6 +213,7 @@ export default function ArtistInsights() {
         setConsentedDates(followRows.map((r: any) => r.consented_at));
         setTopTracks(buildTopTracks(followRows));
         setRecentShareCount(countRecentShares(followRows));
+        setAvgShareAgeDays(averageShareAgeDays(followRows));
       }
 
       const fanIds = followRows.map((f: any) => f.fan_id);
@@ -205,13 +222,15 @@ export default function ArtistInsights() {
         if (mounted.current) {
           setRecentShareCount(0);
           setCityCount(0);
+          setTopCities([]);
+          setAvgShareAgeDays(null);
         }
         return;
       }
 
       const { data: profileRows } = await supabase
         .from("profiles")
-        .select("city")
+        .select("city, country")
         .in("id", fanIds);
 
       if (mounted.current && profileRows) {
@@ -219,6 +238,7 @@ export default function ArtistInsights() {
           profileRows.map((p: any) => p.city).filter(Boolean)
         );
         setCityCount(uniqueCities.size);
+        setTopCities(buildTopCities(profileRows, followRows.length));
       }
     } catch (e) {
       if (mounted.current) Alert.alert("Error", "Could not load dashboard data.");
@@ -229,7 +249,8 @@ export default function ArtistInsights() {
 
   function buildTopTracks(rows: any[]): TrackTally[] {
     const now = new Date();
-    const lastMonth = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, "0")}`;
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
 
     const allTime: Record<string, number> = {};
     for (const row of rows) {
@@ -261,6 +282,34 @@ export default function ArtistInsights() {
       const consentedAt = new Date(row?.consented_at).getTime();
       return Number.isFinite(consentedAt) && consentedAt >= cutoff;
     }).length;
+  }
+
+  function averageShareAgeDays(rows: any[]): number | null {
+    if (!rows.length) return null;
+    const ages = rows
+      .map((row) => Date.now() - new Date(row?.consented_at).getTime())
+      .filter((age) => Number.isFinite(age) && age >= 0);
+    if (!ages.length) return null;
+    const avgMs = ages.reduce((sum, age) => sum + age, 0) / ages.length;
+    return avgMs / (24 * 60 * 60 * 1000);
+  }
+
+  function buildTopCities(rows: any[], totalFans: number): CityTally[] {
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      if (!row.city) continue;
+      const label = [row.city, row.country].filter(Boolean).join(", ");
+      counts[label] = (counts[label] ?? 0) + 1;
+    }
+
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 4)
+      .map(([label, count]) => ({
+        label,
+        count,
+        sharePct: totalFans > 0 ? Math.round((count / totalFans) * 100) : 0,
+      }));
   }
 
   function buildListenerPoints(dates: string[]): { label: string; count: number }[] {
@@ -359,6 +408,31 @@ export default function ArtistInsights() {
             <Text style={styles.statLabel}>CITIES{"\n"}REACHED</Text>
           </View>
         </View>
+
+        {topCities.length > 0 && (
+          <View style={styles.analyticsSection}>
+            <View style={styles.analyticsHeader}>
+              <Text style={styles.tracksSectionTitle}>Top fan cities</Text>
+              <View style={styles.shareAgePill}>
+                <Text style={styles.shareAgeValue}>{formatShareAge(avgShareAgeDays)}</Text>
+                <Text style={styles.shareAgeLabel}>avg share age</Text>
+              </View>
+            </View>
+            {topCities.map((city) => (
+              <View key={city.label} style={styles.cityRow}>
+                <View style={styles.cityInfo}>
+                  <Text style={styles.cityName} numberOfLines={1}>
+                    {city.label}
+                  </Text>
+                  <Text style={styles.cityMeta}>
+                    {city.count} {city.count === 1 ? "fan" : "fans"} sharing
+                  </Text>
+                </View>
+                <Text style={styles.cityShare}>{city.sharePct}%</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {topGenres.length > 0 && (
           <View style={styles.genresSection}>
@@ -534,6 +608,64 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: theme.colors.darkMuted,
     letterSpacing: 0.5,
+  },
+
+  analyticsSection: {
+    backgroundColor: theme.colors.darkCard,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 24,
+  },
+  analyticsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 8,
+  },
+  shareAgePill: {
+    alignItems: "flex-end",
+  },
+  shareAgeValue: {
+    fontFamily: theme.fonts.sansBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.secondary,
+  },
+  shareAgeLabel: {
+    fontFamily: theme.fonts.ui,
+    fontSize: 8,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  cityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  cityInfo: {
+    flex: 1,
+  },
+  cityName: {
+    fontFamily: theme.fonts.sansSemiBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.darkText,
+    marginBottom: 3,
+  },
+  cityMeta: {
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.4,
+  },
+  cityShare: {
+    fontFamily: theme.fonts.sansBold,
+    fontSize: theme.fontSizes.body,
+    color: theme.colors.secondary,
   },
 
   genresSection: {

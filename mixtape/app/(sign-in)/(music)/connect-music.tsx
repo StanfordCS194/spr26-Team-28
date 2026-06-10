@@ -1,4 +1,4 @@
-import { Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,7 +12,15 @@ export default function ConnectMusic() {
   const [showSpotifyModal, setShowSpotifyModal] = useState(false);
   const [spotifyConnected, setSpotifyConnected] = useState(false);
 
-  const { accessToken, fanData, loading, promptAsync } = useSpotifyAuth();
+  const {
+    accessToken,
+    fanData,
+    loading,
+    error: spotifyError,
+    isConfigured,
+    redirectUri,
+    promptAsync,
+  } = useSpotifyAuth();
 
   useEffect(() => {
     if (accessToken) {
@@ -23,7 +31,7 @@ export default function ConnectMusic() {
 
   useEffect(() => {
     if (fanData) {
-      console.log("🎵 Fan data ready for Supabase storage:", {
+      console.log("Fan data ready for Supabase storage:", {
         profile: fanData.profile,
         topTrackCount: fanData.topTracks.length,
         topArtistCount: fanData.topArtists.length,
@@ -33,15 +41,22 @@ export default function ConnectMusic() {
   }, [fanData]);
 
   async function handleContinueToSpotify() {
+    if (!isConfigured) {
+      Alert.alert(
+        "Spotify is not configured",
+        `Set EXPO_PUBLIC_SPOTIFY_CLIENT_ID and register this redirect URI: ${redirectUri}`,
+      );
+      return;
+    }
     await promptAsync();
   }
 
-  // Skip Spotify entirely — go straight to tabs
+  // Skip Spotify entirely - go straight to tabs
   function skip() {
     router.replace("/(tabs)");
   }
 
-  // Spotify connected — proceed to follow an artist
+  // Spotify connected - proceed to follow an artist
   function continueWithSources() {
     router.push("/(sign-in)/follow-artist");
   }
@@ -75,7 +90,13 @@ export default function ConnectMusic() {
               />
             }
             name="Spotify"
-            status={spotifyConnected ? "CONNECTED" : "NOT CONNECTED"}
+            status={
+              spotifyConnected
+                ? "CONNECTED"
+                : isConfigured
+                  ? "NOT CONNECTED"
+                  : "CONFIG NEEDED"
+            }
             connected={spotifyConnected}
             connectedColor={theme.colors.spotify}
             onPress={() => !spotifyConnected && setShowSpotifyModal(true)}
@@ -138,7 +159,7 @@ export default function ConnectMusic() {
                 source={require("@/assets/images/spotify.png")}
                 style={styles.modalLogo}
               />
-              <Text style={styles.modalDots}>· · ·</Text>
+              <Text style={styles.modalDots}>...</Text>
               <Image
                 source={require("@/assets/images/logo.png")}
                 style={styles.modalLogo}
@@ -151,6 +172,14 @@ export default function ConnectMusic() {
             <Text style={styles.modalSubtitle}>
               You'll sign in on Spotify's site. We won't see your password.
             </Text>
+            {!isConfigured && (
+              <Text style={styles.errorText}>
+                Missing Spotify client ID for this build.
+              </Text>
+            )}
+            {spotifyError && isConfigured && (
+              <Text style={styles.errorText}>{spotifyError}</Text>
+            )}
 
             <View style={styles.urlPill}>
               <Ionicons
@@ -164,11 +193,11 @@ export default function ConnectMusic() {
             <Pressable
               style={({ pressed }) => [
                 styles.modalButton,
-                pressed && !loading && styles.modalButtonPressed,
-                loading && styles.buttonDisabled,
+                pressed && !loading && isConfigured && styles.modalButtonPressed,
+                (loading || !isConfigured) && styles.buttonDisabled,
               ]}
               onPress={handleContinueToSpotify}
-              disabled={loading}
+              disabled={loading || !isConfigured}
             >
               <Text style={styles.modalButtonLabel}>
                 {loading ? "Connecting..." : "Continue to Spotify"}
@@ -426,6 +455,14 @@ const styles = StyleSheet.create({
     color: theme.colors.muted,
     textAlign: "center",
     marginBottom: 20,
+  },
+  errorText: {
+    fontFamily: theme.fonts.sans,
+    fontSize: theme.fontSizes.small,
+    lineHeight: 20,
+    color: theme.colors.danger,
+    textAlign: "center",
+    marginBottom: 14,
   },
   urlPill: {
     flexDirection: "row",

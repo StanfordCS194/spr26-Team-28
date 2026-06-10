@@ -128,8 +128,9 @@ npm run android    # build & open in an Android emulator
 ### 5. Reset local demo data
 
 The Supabase config loads `database/seed.sql` after migrations during a local
-reset. That seed creates the Nova Sky demo artist, 20 consenting fan accounts,
-fan Spotify snapshots, and release data.
+reset. That seed creates the Nova Sky demo artist, three additional demo
+artists for discovery/collaboration, 20 consenting fan accounts, fan Spotify
+snapshots, and release data.
 
 ```bash
 supabase start
@@ -141,6 +142,9 @@ Demo logins after reset:
 | Role | Email | Password |
 | --- | --- | --- |
 | Artist | `novasky@mixtape.com` | `password` |
+| Artist | `lunavale@mixtape.com` | `password` |
+| Artist | `circuitbloom@mixtape.com` | `password` |
+| Artist | `harborglass@mixtape.com` | `password` |
 | Fan | `fan_la_maya@mixtape.com` | `password` |
 
 The committed `.env` points at the shared hosted demo project. To run the app
@@ -286,6 +290,11 @@ individual fan Spotify claims.
 | **Spotify** | Supported | OAuth (Authorization Code + PKCE); reads profile, top tracks, top artists, recently played. See [Spotify redirect URI](#3-spotify-redirect-uri). |
 | **Apple Music** | Coming soon | Requires an Apple Music subscription/API entitlement; shown as *Coming soon* in onboarding. |
 | **Supabase** | Supported | Auth + Postgres. |
+
+Spotify access tokens expire quickly, so the app stores the latest access token,
+expiry time, and refresh token on-device. The You tab's re-sync action uses a
+still-valid token when possible and refreshes it silently when Spotify provides a
+refresh token; otherwise it sends the fan back through the Spotify connect flow.
 
 ---
 

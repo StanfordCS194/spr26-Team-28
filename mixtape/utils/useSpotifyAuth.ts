@@ -24,7 +24,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  * Spotify requires the redirect URI to EXACTLY match one of the URIs registered
  * in the Spotify Developer Dashboard. A bare `makeRedirectUri()` derives the URI
  * from the local Expo dev-server address (e.g. exp://192.168.1.5:8081), which
- * changes between machines, networks, and runs — causing "INVALID_CLIENT: Invalid
+ * changes between machines, networks, and runs - causing "INVALID_CLIENT: Invalid
  * redirect URI" errors (see issue #30).
  *
  * To make the redirect stable we, in order of preference:
@@ -41,7 +41,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const REDIRECT_URI =
   process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ??
   makeRedirectUri({ scheme: "mixtape", path: "spotify-auth-callback" });
-const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID!;
+const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? "";
 
 if (__DEV__) {
   console.log("[Spotify] Redirect URI (register this in the dashboard):", REDIRECT_URI);
@@ -80,39 +80,107 @@ export interface FanSpotifyData {
   recentlyPlayed: SpotifyApi.PlayHistoryObject[];
 }
 
+interface SpotifyTokenResponse {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  error?: string;
+  error_description?: string;
+}
+
 // Token reuse
 //
-// The OAuth access token lives only in hook state, so once the connect-music
-// screen unmounts there is no way to refresh a fan's listening data without a
-// brand-new OAuth. We persist the most recent access token (Spotify tokens last
-// ~1 hour) so a later step in the same session -- notably share-consent -- can
-// re-sync the fan's data without sending them back through Spotify.
+// Spotify access tokens are short-lived. Persist the access token, expiry, and
+// refresh token so a later re-sync can refresh quietly instead of forcing a new
+// OAuth round trip whenever the original one-hour access token expires.
 
 const TOKEN_KEY = "spotify_access_token";
 const TOKEN_AT_KEY = "spotify_access_token_at";
-const TOKEN_MAX_AGE_MS = 55 * 60 * 1000; // stay inside Spotify's ~60m expiry
+const TOKEN_EXPIRES_AT_KEY = "spotify_access_token_expires_at";
+const TOKEN_REFRESH_KEY = "spotify_refresh_token";
+const TOKEN_MAX_AGE_MS = 55 * 60 * 1000; // legacy fallback for old stored tokens
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
-async function persistAccessToken(token: string): Promise<void> {
+export function isSpotifyConfigured(): boolean {
+  return CLIENT_ID.trim().length > 0;
+}
+
+export function getSpotifyRedirectUri(): string {
+  return REDIRECT_URI;
+}
+
+async function persistTokenResponse(
+  tokens: SpotifyTokenResponse,
+  fallbackRefreshToken?: string | null,
+): Promise<string | null> {
+  const accessToken = tokens.access_token;
+  if (!accessToken) return null;
+
+  const expiresInMs = Math.max((tokens.expires_in ?? 3600) * 1000, 0);
+  const refreshToken = tokens.refresh_token ?? fallbackRefreshToken;
+  const rows: [string, string][] = [
+    [TOKEN_KEY, accessToken],
+    [TOKEN_AT_KEY, String(Date.now())],
+    [TOKEN_EXPIRES_AT_KEY, String(Date.now() + expiresInMs)],
+  ];
+
+  if (refreshToken) rows.push([TOKEN_REFRESH_KEY, refreshToken]);
+
   try {
-    await AsyncStorage.multiSet([
-      [TOKEN_KEY, token],
-      [TOKEN_AT_KEY, String(Date.now())],
-    ]);
+    await AsyncStorage.multiSet(rows);
   } catch {
     // Non-fatal: the token just won't be reusable later.
   }
+  return accessToken;
 }
 
-// Returns a still-valid stored access token, or null if missing/expired.
-export async function getStoredSpotifyToken(): Promise<string | null> {
+export async function clearStoredSpotifyToken(): Promise<void> {
   try {
-    const [[, token], [, at]] = await AsyncStorage.multiGet([
+    await AsyncStorage.multiRemove([
       TOKEN_KEY,
       TOKEN_AT_KEY,
+      TOKEN_EXPIRES_AT_KEY,
+      TOKEN_REFRESH_KEY,
     ]);
-    if (!token || !at) return null;
-    if (Date.now() - Number(at) > TOKEN_MAX_AGE_MS) return null;
-    return token;
+  } catch {
+    // Non-fatal cleanup.
+  }
+}
+
+// Returns a valid stored access token, refreshing it when possible.
+export async function getStoredSpotifyToken(): Promise<string | null> {
+  try {
+    const [[, token], [, at], [, expiresAt], [, refreshToken]] = await AsyncStorage.multiGet([
+      TOKEN_KEY,
+      TOKEN_AT_KEY,
+      TOKEN_EXPIRES_AT_KEY,
+      TOKEN_REFRESH_KEY,
+    ]);
+    const expiry = Number(expiresAt);
+
+    if (
+      token &&
+      Number.isFinite(expiry) &&
+      Date.now() < expiry - TOKEN_EXPIRY_BUFFER_MS
+    ) {
+      return token;
+    }
+
+    const legacyIssuedAt = Number(at);
+    if (
+      token &&
+      !expiresAt &&
+      Number.isFinite(legacyIssuedAt) &&
+      Date.now() - legacyIssuedAt < TOKEN_MAX_AGE_MS
+    ) {
+      return token;
+    }
+
+    if (refreshToken) {
+      return refreshSpotifyAccessToken(refreshToken);
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -156,6 +224,9 @@ export function useSpotifyAuth() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [fanData, setFanData] = useState<FanSpotifyData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(
+    isSpotifyConfigured() ? null : "Spotify is not configured for this build.",
+  );
 
   const [request, response, promptAsync] = useAuthRequest(
     {
@@ -173,24 +244,34 @@ export function useSpotifyAuth() {
     if (response?.type === "success" && request?.codeVerifier) {
       const { code } = response.params;
       if (code) {
+        if (!isSpotifyConfigured()) {
+          setError("Missing EXPO_PUBLIC_SPOTIFY_CLIENT_ID.");
+          return;
+        }
         setLoading(true);
         exchangeCodeForToken(code, request.codeVerifier)
-          .then((token) => {
+          .then(async (tokens) => {
+            const token = tokens ? await persistTokenResponse(tokens) : null;
             if (token) {
+              setError(null);
               setAccessToken(token);
-              persistAccessToken(token);
               console.log("Spotify connected. Access token received.");
             } else {
-              console.error("Token exchange returned null.");
+              setError("Spotify did not return an access token.");
             }
           })
-          .catch((e) => console.error("Token exchange failed:", e))
+          .catch((e) => {
+            const message = e?.message ?? "Token exchange failed.";
+            console.error("Token exchange failed:", message);
+            setError(message);
+          })
           .finally(() => setLoading(false));
       }
     }
 
     if (response?.type === "error") {
       console.error("Spotify auth error:", response.error);
+      setError(response.error?.message ?? "Spotify authorization failed.");
     }
 
     if (response?.type === "dismiss") {
@@ -205,6 +286,7 @@ export function useSpotifyAuth() {
     setLoading(true);
     syncFanSpotifyData(accessToken)
       .then((data) => {
+        setError(null);
         setFanData(data);
         if (data) {
           console.log(
@@ -215,11 +297,24 @@ export function useSpotifyAuth() {
           );
         }
       })
-      .catch((e) => console.error("Failed to sync fan data:", e))
+      .catch((e) => {
+        const message = e?.message ?? "Failed to sync Spotify data.";
+        console.error("Failed to sync fan data:", message);
+        setError(message);
+      })
       .finally(() => setLoading(false));
   }, [accessToken]);
 
-  return { accessToken, fanData, loading, request, promptAsync };
+  return {
+    accessToken,
+    fanData,
+    loading,
+    error,
+    isConfigured: isSpotifyConfigured(),
+    redirectUri: REDIRECT_URI,
+    request,
+    promptAsync,
+  };
 }
 
 // Token exchange
@@ -227,7 +322,7 @@ export function useSpotifyAuth() {
 async function exchangeCodeForToken(
   code: string,
   codeVerifier: string,
-): Promise<string | null> {
+): Promise<SpotifyTokenResponse | null> {
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     code,
@@ -244,16 +339,48 @@ async function exchangeCodeForToken(
 
   const data = await res.json();
 
-  if (data.error) {
+  if (!res.ok || data.error) {
     console.error(
       "Spotify token error:",
+      data.error,
+      data.error_description,
+    );
+    throw new Error(data.error_description ?? data.error ?? "Spotify token exchange failed.");
+  }
+
+  return data;
+}
+
+async function refreshSpotifyAccessToken(
+  refreshToken: string,
+): Promise<string | null> {
+  if (!isSpotifyConfigured()) return null;
+
+  const params = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    client_id: CLIENT_ID,
+  });
+
+  const res = await fetch(DISCOVERY.tokenEndpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+
+  const data = (await res.json()) as SpotifyTokenResponse;
+
+  if (!res.ok || data.error) {
+    await clearStoredSpotifyToken();
+    console.error(
+      "Spotify refresh error:",
       data.error,
       data.error_description,
     );
     return null;
   }
 
-  return data.access_token;
+  return persistTokenResponse(data, refreshToken);
 }
 
 // Fan data fetching
