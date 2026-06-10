@@ -299,7 +299,7 @@ refresh token; otherwise it sends the fan back through the Spotify connect flow.
 ---
 
 ## Troubleshooting
-
+- **Expo Errors** - Did you run `npm install`? before running `npx expo start`?
 - **Spotify "INVALID_CLIENT: Invalid redirect URI"** - the redirect URI the app
   sends doesn't match one registered in the Spotify dashboard. Copy the
   `[Spotify] Redirect URI` line the app logs on startup and register it exactly,
