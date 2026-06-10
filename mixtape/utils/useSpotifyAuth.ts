@@ -43,6 +43,14 @@ const REDIRECT_URI =
   makeRedirectUri({ scheme: "mixtape", path: "spotify-auth-callback" });
 const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? "";
 
+/*
+ * Optional pre-issued access token (EXPO_PUBLIC_SPOTIFY_TOKEN). When set, the
+ * hook starts out already "connected" and fetches listening data immediately,
+ * skipping the OAuth prompt. Spotify access tokens expire after ~1 hour, so
+ * this is only useful for short-lived local development/testing.
+ */
+const ENV_TOKEN = process.env.EXPO_PUBLIC_SPOTIFY_TOKEN ?? null;
+
 if (__DEV__) {
   console.log(
     "[Spotify] Redirect URI (register this in the dashboard):",
@@ -253,7 +261,7 @@ export async function syncFanSpotifyData(
 // Hook
 
 export function useSpotifyAuth() {
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(ENV_TOKEN);
   const [fanData, setFanData] = useState<FanSpotifyData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(
