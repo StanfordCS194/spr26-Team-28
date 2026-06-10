@@ -10,7 +10,7 @@ The product has two distinct experiences in one app:
 - **Fan view** - connect Spotify, see what your listening says about your taste,
   and choose which artists you share that data with (and revoke any time).
 - **Artist view** - see aggregated insights from fans who have consented to
-  share, where your listeners are, and manage your releases and public profile.
+  share, where your sharing fans are, and manage your releases and public profile.
 
 Built with **Expo / React Native** (TypeScript) and **Supabase** (auth +
 Postgres), with **Spotify** as the listening-data source.
@@ -196,7 +196,8 @@ is how the fan and artist tab navigators are kept separate.
    takes the artist straight to the dashboard (no Spotify/follow steps).
 2. **Artist tabs** (`(artist-tabs)/`):
    - **INSIGHTS** (`index.tsx`) - aggregated insights from consenting fans
-   - **FANS** (`fans.tsx`) - where your listeners are (city-level map)
+   - **FANS** (`fans.tsx`) - where your sharing fans are (city-level map)
+   - **COLLAB** (`collaborate.tsx`) - release-genre collaborator matches
    - **RELEASES** (`releases.tsx`) - list and create releases
    - **PROFILE** (`profile.tsx`) - edit bio, genres, location, and social links;
      this is also the public-facing profile fans see
@@ -209,8 +210,7 @@ reads `profiles.role` and sends fans to `(tabs)` and artists to `(artist-tabs)`.
 ## Database schema
 
 The app uses these Supabase (Postgres) tables. Column lists reflect what the app
-reads/writes today; a canonical SQL schema file is tracked separately (see issue
-#26) and should be referenced here once it lands.
+reads/writes today; canonical SQL migrations live in `supabase/migrations/`.
 
 ### `profiles`
 Core user record for both fans and artists (keyed by the Supabase auth user id).
@@ -223,6 +223,30 @@ Core user record for both fans and artists (keyed by the Supabase auth user id).
 | `bio`, `genre` | Artist bio and comma-separated genres |
 | `country`, `city` | Location |
 | `instagram`, `tiktok`, `website` | Social links (artist profile) |
+| `genre_vector` | JSON map of release genre slug -> weight for collaborator matching |
+
+### `genres`
+Lookup data for artist-entered release genres.
+
+| Column | Notes |
+| --- | --- |
+| `id` | Stable integer genre id |
+| `name` | Display name |
+| `slug` | Stable slug used in `profiles.genre_vector` |
+
+### `releases`
+Artist discography.
+
+| Column | Notes |
+| --- | --- |
+| `id` | PK |
+| `artist_id` -> `profiles.id` | The artist |
+| `title` | Track or release title |
+| `release_type` | `"single" \| "ep" \| "album"` |
+| `album_title` | Parent EP/album title for multi-track releases |
+| `release_date` | Date (nullable) |
+| `track_count` | Number of tracks |
+| `genre_ids` | Integer array of selected `genres.id` values |
 
 ### `fan_follows`
 The fan->artist sharing relationship, including consent.
@@ -237,6 +261,9 @@ The fan->artist sharing relationship, including consent.
 
 ### `fan_spotify_data`
 A cached snapshot of each fan's Spotify listening data.
+Fans see `top_tracks` and `top_artists` back as their own Spotify listening
+insights; artist screens should use consented rows only in aggregate and avoid
+individual fan Spotify claims.
 
 | Column | Notes |
 | --- | --- |
@@ -245,18 +272,6 @@ A cached snapshot of each fan's Spotify listening data.
 | `top_tracks`, `top_artists` | JSON arrays from the Spotify "top" endpoints |
 | `recently_played` | JSON array of recent play history |
 | `fetched_at` | Last sync timestamp |
-
-### `releases`
-Artist discography.
-
-| Column | Notes |
-| --- | --- |
-| `id` | PK |
-| `artist_id` -> `profiles.id` | The artist |
-| `title` | Release title |
-| `release_type` | `"single" \| "ep" \| "album"` |
-| `release_date` | Date (nullable) |
-| `track_count` | Number of tracks |
 
 > **Privacy model:** the artist view only ever reads **aggregated** data from
 > fans whose `fan_follows.consented_at` is set. Individual fans who have not

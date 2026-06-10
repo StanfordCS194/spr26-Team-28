@@ -1,5 +1,5 @@
 /*
- * Fans tab — global listener map with expandable top cities panel.
+ * Fans tab - global fan map with expandable top cities panel.
  */
 
 import React, { useEffect, useRef, useState } from "react";
@@ -22,7 +22,7 @@ import { Country, City } from "country-state-city";
 import { supabase } from "@/database/db";
 import theme from "@/assets/theme";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// Types
 
 interface CityData {
   id: number;
@@ -34,7 +34,7 @@ interface CityData {
   topSong: string;
 }
 
-// ─── Shared color helper (used by both Leaflet HTML and the city panel) ────────
+// Shared color helper used by both Leaflet HTML and the city panel.
 
 function getDotColor(listeners: number, minL: number, maxL: number): string {
   const t = (listeners - minL) / (maxL - minL || 1);
@@ -44,7 +44,7 @@ function getDotColor(listeners: number, minL: number, maxL: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
-// ─── Coordinate lookup ────────────────────────────────────────────────────────
+// Coordinate lookup
 
 const COUNTRY_ISO: Record<string, string> = Object.fromEntries(
   Country.getAllCountries().map((c) => [c.name, c.isoCode])
@@ -62,7 +62,7 @@ function resolveCoords(
 }
 
 
-// ─── Data fetching ────────────────────────────────────────────────────────────
+// Data fetching
 
 async function fetchMapData(artistId: string): Promise<CityData[]> {
   const { data, error } = await supabase
@@ -107,7 +107,7 @@ async function fetchMapData(artistId: string): Promise<CityData[]> {
             return acc;
           }, {})
         ).sort((a, b) => b[1] - a[1])[0][0]
-      : "—";
+      : "--";
 
     result.push({
       id: id++,
@@ -123,7 +123,7 @@ async function fetchMapData(artistId: string): Promise<CityData[]> {
   return result;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -131,7 +131,7 @@ function formatNumber(n: number): string {
   return n.toString();
 }
 
-// ─── Leaflet HTML ─────────────────────────────────────────────────────────────
+// Leaflet HTML
 
 function buildMapHTML(data: CityData[]): string {
   if (!data.length) return `
@@ -207,7 +207,7 @@ function buildMapHTML(data: CityData[]): string {
 </html>`;
 }
 
-// ─── Top Cities Panel ─────────────────────────────────────────────────────────
+// Top Cities Panel
 
 const COLLAPSED_H = 52;
 const EXPANDED_H  = 340;
@@ -254,7 +254,7 @@ function TopCitiesPanel({
         />
       </TouchableOpacity>
 
-      {/* City list — only rendered when panel has space */}
+      {/* City list - only rendered when panel has space */}
       {expanded && (
         <ScrollView
           style={panelStyles.list}
@@ -365,7 +365,7 @@ const panelStyles = StyleSheet.create({
   },
 });
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// Main component
 
 export default function FansTab() {
   const [mapData, setMapData] = useState<CityData[]>([]);
@@ -412,12 +412,12 @@ export default function FansTab() {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerLabel}>FANS</Text>
-          <Text style={styles.headerTitle}>Listener Map</Text>
+          <Text style={styles.headerTitle}>Fan Map</Text>
         </View>
         {!loading && !error && totalFans > 0 && (
           <View style={styles.headerBadge}>
             <Text style={styles.headerBadgeText}>
-              {formatNumber(totalFans)} listener{totalFans !== 1 ? "s" : ""}
+              {formatNumber(totalFans)} sharing fan{totalFans !== 1 ? "s" : ""}
             </Text>
           </View>
         )}
@@ -427,11 +427,11 @@ export default function FansTab() {
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={theme.colors.primary} size="large" />
-          <Text style={styles.centeredText}>Loading fan locations…</Text>
+          <Text style={styles.centeredText}>Loading fan locations...</Text>
         </View>
       ) : error ? (
         <View style={styles.centered}>
-          <Text style={styles.centeredText}>⚠ {error}</Text>
+          <Text style={styles.centeredText}>Error: {error}</Text>
         </View>
       ) : Platform.OS === "web" ? (
         // react-native-webview has no web implementation, so the Leaflet map
@@ -439,7 +439,7 @@ export default function FansTab() {
         <View style={[styles.map, styles.webFallback]}>
           <Ionicons name="map-outline" size={40} color={theme.colors.darkMuted} />
           <Text style={styles.webFallbackText}>
-            The interactive listener map runs on iOS and Android. Your cities are
+            The interactive fan map runs on iOS and Android. Your cities are
             listed below.
           </Text>
         </View>
@@ -479,7 +479,7 @@ export default function FansTab() {
                   <Text style={styles.countryName}>{selected?.country}</Text>
                 </View>
                 <TouchableOpacity onPress={() => setSelected(null)} style={styles.closeBtn}>
-                  <Text style={styles.closeText}>✕</Text>
+                  <Text style={styles.closeText}>X</Text>
                 </TouchableOpacity>
               </View>
 
@@ -488,7 +488,7 @@ export default function FansTab() {
               <View style={styles.statsRow}>
                 <View style={styles.statBlock}>
                   <Text style={styles.statValue}>
-                    {selected ? formatNumber(selected.monthlyListeners) : "—"}
+                    {selected ? formatNumber(selected.monthlyListeners) : "--"}
                   </Text>
                   <Text style={styles.statLabel}>{"Sharing\nFans"}</Text>
                 </View>
@@ -497,7 +497,7 @@ export default function FansTab() {
                   <Text style={styles.statValue}>
                     {selected && totalFans
                       ? `${Math.round((selected.monthlyListeners / totalFans) * 100)}%`
-                      : "—"}
+                      : "--"}
                   </Text>
                   <Text style={styles.statLabel}>{"Share of\nyour fans"}</Text>
                 </View>
@@ -506,7 +506,7 @@ export default function FansTab() {
               <View style={styles.divider} />
 
               <View style={styles.topSongRow}>
-                <Text style={styles.topSongLabel}>🎵  Top Song</Text>
+                <Text style={styles.topSongLabel}>Top Song</Text>
                 <Text style={styles.topSongValue}>"{selected?.topSong}"</Text>
               </View>
             </View>
@@ -517,7 +517,7 @@ export default function FansTab() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// Styles
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.darkBackground },

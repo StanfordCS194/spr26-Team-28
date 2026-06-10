@@ -6,7 +6,7 @@
  *
  * After every save, recomputeGenreVector() tallies genre frequencies across
  * all the artist's releases and upserts a normalised weight map to
- * profiles.genre_vector — e.g. {"pop": 0.6, "indie": 0.4}.  That vector is
+ * profiles.genre_vector - e.g. {"pop": 0.6, "indie": 0.4}. That vector is
  * what collaborate.tsx uses for cosine-similarity recommendations.
  */
 
@@ -35,6 +35,7 @@ interface Genre {
 interface Release {
   id: string;
   title: string;
+  release_type: "single" | "ep" | "album";
   album_title: string | null;
   track_count: number;
   fan_count: number;
@@ -44,6 +45,11 @@ interface Release {
 function parseTrackCount(value: string): number {
   const parsed = Number.parseInt(value.trim(), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function releaseTypeLabel(type: Release["release_type"]): string {
+  if (type === "ep") return "EP";
+  return type === "album" ? "Album" : "Single";
 }
 
 // Recomputes the artist's genre_vector from all their releases and upserts it
@@ -96,7 +102,7 @@ export default function ReleasesTab() {
   const [saving, setSaving] = useState(false);
 
   const [newTitle, setNewTitle] = useState("");
-  const [newKind, setNewKind] = useState<"single" | "album">("single");
+  const [newKind, setNewKind] = useState<"single" | "ep" | "album">("single");
   const [newAlbumTitle, setNewAlbumTitle] = useState("");
   const [newTracks, setNewTracks] = useState("");
   const [newGenreIds, setNewGenreIds] = useState<number[]>([]);
@@ -128,12 +134,13 @@ export default function ReleasesTab() {
       const [releasesRes, followsRes] = await Promise.all([
         supabase
           .from("releases")
-          .select("id, title, album_title, track_count, genre_ids")
+          .select("id, title, release_type, album_title, track_count, genre_ids")
           .eq("artist_id", user.id),
         supabase
           .from("fan_follows")
           .select("top_track")
           .eq("artist_id", user.id)
+          .not("consented_at", "is", null)
           .not("top_track", "is", null),
       ]);
 
@@ -175,7 +182,7 @@ export default function ReleasesTab() {
 
   async function saveRelease() {
     if (!newTitle.trim()) return;
-    if (newKind === "album" && !newAlbumTitle.trim()) return;
+    if (newKind !== "single" && !newAlbumTitle.trim()) return;
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -188,7 +195,8 @@ export default function ReleasesTab() {
         .insert({
           artist_id: user.id,
           title: newTitle.trim(),
-          album_title: newKind === "album" ? newAlbumTitle.trim() : null,
+          release_type: newKind,
+          album_title: newKind === "single" ? null : newAlbumTitle.trim(),
           track_count: newKind === "single" ? 1 : trackCount,
           genre_ids: newGenreIds,
         })
@@ -269,7 +277,7 @@ export default function ReleasesTab() {
             {/* Kind picker */}
             <Text style={styles.formLabel}>TYPE</Text>
             <View style={styles.typeRow}>
-              {(["single", "album"] as const).map((k) => (
+              {(["single", "ep", "album"] as const).map((k) => (
                 <Pressable
                   key={k}
                   style={[
@@ -287,23 +295,23 @@ export default function ReleasesTab() {
                       newKind === k && styles.typeChipTextSelected,
                     ]}
                   >
-                    {k === "single" ? "Single" : "Album"}
+                    {k === "single" ? "Single" : k === "ep" ? "EP" : "Album"}
                   </Text>
                 </Pressable>
               ))}
             </View>
 
             {/* Album title */}
-            {newKind === "album" && (
+            {newKind !== "single" && (
               <>
                 <Text style={[styles.formLabel, { marginTop: 14 }]}>
-                  ALBUM TITLE
+                  {newKind === "ep" ? "EP TITLE" : "ALBUM TITLE"}
                 </Text>
                 <TextInput
                   style={styles.formInput}
                   value={newAlbumTitle}
                   onChangeText={setNewAlbumTitle}
-                  placeholder="Album name"
+                  placeholder={newKind === "ep" ? "EP name" : "Album name"}
                   placeholderTextColor={theme.colors.darkMuted}
                   autoFocus
                 />
@@ -385,7 +393,7 @@ export default function ReleasesTab() {
                   style={[
                     styles.artPlaceholder,
                     {
-                      borderColor: release.album_title
+                      borderColor: release.release_type !== "single"
                         ? theme.colors.secondary
                         : "rgba(255,255,255,0.15)",
                     },
@@ -404,16 +412,21 @@ export default function ReleasesTab() {
                       style={[
                         styles.typeBadge,
                         {
-                          backgroundColor: release.album_title
+                          backgroundColor: release.release_type !== "single"
                             ? theme.colors.secondary
                             : "rgba(255,255,255,0.15)",
                         },
                       ]}
                     >
                       <Text style={styles.typeBadgeText}>
-                        {release.album_title ? release.album_title : "Single"}
+                        {releaseTypeLabel(release.release_type)}
                       </Text>
                     </View>
+                    {release.album_title && release.album_title !== release.title && (
+                      <Text style={styles.albumTitle} numberOfLines={1}>
+                        {release.album_title}
+                      </Text>
+                    )}
                     {release.fan_count > 0 && (
                       <Text style={styles.fanCount}>
                         {release.fan_count}{" "}
@@ -455,8 +468,7 @@ export default function ReleasesTab() {
             />
             <Text style={styles.emptyTitle}>No releases yet</Text>
             <Text style={styles.emptyText}>
-              Add your singles, EPs, and albums to track how fans engage with
-              your music.
+              Add your singles, EPs, and albums to track fan favorite picks.
             </Text>
             {!adding && (
               <Pressable
@@ -670,6 +682,13 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: "#fff",
     letterSpacing: 0.5,
+  },
+  albumTitle: {
+    flexShrink: 1,
+    fontFamily: theme.fonts.ui,
+    fontSize: theme.fontSizes.tiny,
+    color: theme.colors.darkMuted,
+    letterSpacing: 0.3,
   },
   fanCount: {
     fontFamily: theme.fonts.ui,

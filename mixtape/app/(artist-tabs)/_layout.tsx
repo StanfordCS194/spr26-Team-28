@@ -1,9 +1,9 @@
 /*
  * ARTIST view tab navigator.
  *
- * Defines the four artist-facing tabs (INSIGHTS, FANS, RELEASES, PROFILE) using
- * the dark theme. Kept separate from the fan `(tabs)` group so fan and artist
- * navigation never overlap. Users are routed here after sign-in by
+ * Defines the five artist-facing tabs (INSIGHTS, FANS, COLLAB, RELEASES,
+ * PROFILE) using the dark theme. Kept separate from the fan `(tabs)` group so
+ * fan and artist navigation never overlap. Users are routed here after sign-in by
  * `utils/navigateByRole` when their `profiles.role` is "artist".
  */
 

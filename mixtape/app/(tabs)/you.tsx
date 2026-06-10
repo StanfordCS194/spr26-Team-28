@@ -206,17 +206,17 @@ export default function YouTab() {
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{topTracks.length > 0 ? topTracks.length : "--"}</Text>
-            <Text style={styles.statLabel}>TOP TRACKS</Text>
+            <Text style={styles.statLabel}>SPOTIFY{"\n"}TRACKS</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{topArtists.length > 0 ? topArtists.length : "--"}</Text>
-            <Text style={styles.statLabel}>TOP ARTISTS</Text>
+            <Text style={styles.statLabel}>SPOTIFY{"\n"}ARTISTS</Text>
           </View>
         </View>
 
         {topTracks.length > 0 && (
           <>
-            <Text style={styles.sectionLabel}>YOUR TOP TRACKS</Text>
+            <Text style={styles.sectionLabel}>YOUR SPOTIFY TOP TRACKS</Text>
             <View style={styles.listCard}>
               {topTracks.map((track: any, i: number) => (
                 <View
@@ -241,7 +241,7 @@ export default function YouTab() {
 
         {topArtists.length > 0 && (
           <>
-            <Text style={styles.sectionLabel}>YOUR TOP ARTISTS</Text>
+            <Text style={styles.sectionLabel}>YOUR SPOTIFY TOP ARTISTS</Text>
             <View style={styles.listCard}>
               {topArtists.map((artist: any, i: number) => (
                 <View

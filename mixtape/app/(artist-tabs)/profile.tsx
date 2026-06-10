@@ -509,7 +509,7 @@ export default function ProfileTab() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>Username</Text>
                   <Text style={styles.rowMeta}>
-                    @{profile?.username || "—"}
+                    @{profile?.username || "--"}
                   </Text>
                 </View>
               </View>
