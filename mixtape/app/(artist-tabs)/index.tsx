@@ -113,6 +113,21 @@ function formatNumber(n: number): string {
   return n.toString();
 }
 
+const GENRE_COLORS = [
+  "rgba(230,139,133,0.85)", // primary (rose)
+  "rgba(66,129,164,0.85)",  // secondary (blue)
+  "rgba(147,112,219,0.75)", // purple
+  "rgba(72,177,140,0.75)",  // teal
+  "rgba(230,180,90,0.75)",  // amber
+];
+
+function slugToLabel(slug: string): string {
+  return slug
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 export default function ArtistInsights() {
   const mounted = useRef(true);
   const [artistName, setArtistName] = useState("");
@@ -122,6 +137,7 @@ export default function ArtistInsights() {
   const [releaseCount, setReleaseCount] = useState(0);
   const [consentedDates, setConsentedDates] = useState<string[]>([]);
   const [topTracks, setTopTracks] = useState<TrackTally[]>([]);
+  const [topGenres, setTopGenres] = useState<{ slug: string; weight: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -141,11 +157,21 @@ export default function ArtistInsights() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("name")
+        .select("name, genre_vector")
         .eq("id", user.id)
         .single();
 
-      if (profile && mounted.current) setArtistName((profile as Profile).name);
+      if (profile && mounted.current) {
+        setArtistName((profile as any).name);
+        const vector = (profile as any).genre_vector as Record<string, number> | null;
+        if (vector) {
+          const sorted = Object.entries(vector)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([slug, weight]) => ({ slug, weight }));
+          setTopGenres(sorted);
+        }
+      }
 
       const { count: releases } = await supabase
         .from("releases")
@@ -334,6 +360,19 @@ export default function ArtistInsights() {
           </View>
         </View>
 
+        {topGenres.length > 0 && (
+          <View style={styles.genresSection}>
+            <Text style={styles.tracksSectionTitle}>Your genres</Text>
+            <View style={styles.genreBubbleRow}>
+              {topGenres.map(({ slug }, i) => (
+                <View key={slug} style={[styles.genreBubble, { backgroundColor: GENRE_COLORS[i % GENRE_COLORS.length] }]}>
+                  <Text style={styles.genreBubbleText}>{slugToLabel(slug)}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {topTracks.length > 0 && (
           <View style={styles.tracksSection}>
             <View style={styles.tracksSectionHeader}>
@@ -495,6 +534,27 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: theme.colors.darkMuted,
     letterSpacing: 0.5,
+  },
+
+  genresSection: {
+    marginBottom: 24,
+  },
+  genreBubbleRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 14,
+  },
+  genreBubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  genreBubbleText: {
+    fontFamily: theme.fonts.sansSemiBold,
+    fontSize: theme.fontSizes.small,
+    color: "#fff",
+    letterSpacing: 0.2,
   },
 
   tracksSection: { marginBottom: 24 },
