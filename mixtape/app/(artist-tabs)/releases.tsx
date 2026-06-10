@@ -46,8 +46,13 @@ export default function ReleasesTab() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || !mounted.current) return;
 
-      const [releasesRes, followsRes] = await Promise.all([
-        supabase
+      let releasesRes: any = await supabase
+        .from("releases")
+        .select("id, title, release_type, album_title, track_count, genre_ids")
+        .eq("artist_id", user.id);
+
+      if (isMissingColumn(releasesRes.error, "release_type")) {
+        releasesRes = await supabase
           .from("releases")
           .select("id, title, album_title, track_count")
           .eq("artist_id", user.id),
@@ -63,7 +68,7 @@ export default function ReleasesTab() {
         return;
       }
 
-      const rawReleases = (releasesRes.data ?? []) as Omit<Release, "fan_count">[];
+      const rawReleases = (releasesRes.data ?? []) as RawRelease[];
 
       const fanCounts: Record<string, number> = {};
       for (const row of followsRes.data ?? []) {
@@ -107,6 +112,17 @@ export default function ReleasesTab() {
         })
         .select()
         .single();
+
+      if (isMissingColumn(error, "release_type")) {
+        const { release_type, ...legacyPayload } = payload;
+        const legacyResult = await supabase
+          .from("releases")
+          .insert(legacyPayload)
+          .select()
+          .single();
+        data = legacyResult.data;
+        error = legacyResult.error;
+      }
 
       if (error) {
         Alert.alert("Error", error.message);

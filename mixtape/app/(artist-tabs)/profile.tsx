@@ -56,15 +56,13 @@ type Profile = {
 const SPOTIFY_BRAND_COLOR = theme.colors.spotify;
 
 function initialsFromName(name: string): string {
-  return (
-    name
-      .split(" ")
-      .filter(Boolean)
-      .map((w) => w[0] ?? "")
-      .join("")
-      .slice(0, 2)
-      .toUpperCase()
-  );
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 }
 
 function capitalize(s: string): string {
@@ -106,11 +104,11 @@ export default function ProfileTab() {
   }, []);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session) loadProfile();
-      }
-    );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) loadProfile();
+    });
     loadProfile();
     return () => subscription.unsubscribe();
   }, []);
@@ -118,7 +116,9 @@ export default function ProfileTab() {
   async function loadProfile() {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) return;
       setEmail(user.email ?? "");
@@ -160,7 +160,7 @@ export default function ProfileTab() {
 
   function toggleGenre(genre: string) {
     setEditGenres((prev) =>
-      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
+      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre],
     );
   }
 
@@ -209,9 +209,14 @@ export default function ProfileTab() {
   }
 
   // Build the full URL for a social link
-  function socialUrl(platform: "instagram" | "tiktok" | "website", value: string): string {
-    if (platform === "instagram") return `https://instagram.com/${stripAtSign(value)}`;
-    if (platform === "tiktok") return `https://tiktok.com/@${stripAtSign(value)}`;
+  function socialUrl(
+    platform: "instagram" | "tiktok" | "website",
+    value: string,
+  ): string {
+    if (platform === "instagram")
+      return `https://instagram.com/${stripAtSign(value)}`;
+    if (platform === "tiktok")
+      return `https://tiktok.com/@${stripAtSign(value)}`;
     // For website, ensure it has a protocol
     if (!/^https?:\/\//i.test(value)) return `https://${value}`;
     return value;
@@ -225,7 +230,9 @@ export default function ProfileTab() {
   }
 
   // Whether the profile has any social links set
-  const hasSocialLinks = Boolean(profile?.instagram || profile?.tiktok || profile?.website);
+  const hasSocialLinks = Boolean(
+    profile?.instagram || profile?.tiktok || profile?.website,
+  );
 
   async function onSignOut() {
     setSigningOut(true);
@@ -236,7 +243,7 @@ export default function ProfileTab() {
         if (mounted.current) setSigningOut(false);
         return;
       }
-      router.replace("/(sign-in)/sign-in");
+      router.replace("/");
     } catch (e: any) {
       Alert.alert("Sign out failed", e?.message ?? "Network error");
       if (mounted.current) setSigningOut(false);
@@ -248,7 +255,9 @@ export default function ProfileTab() {
   const displayName = artistName || "Your profile";
   const initials = initialsFromName(artistName);
   const genres = parseGenreTags(profile?.genre ?? null);
-  const locationStr = [profile?.city, profile?.country].filter(Boolean).join(", ");
+  const locationStr = [profile?.city, profile?.country]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <SafeAreaView style={styles.container}>
@@ -266,7 +275,6 @@ export default function ProfileTab() {
               <Text style={styles.topLabel}>ARTIST PROFILE</Text>
               <Text style={styles.title}>{displayName}</Text>
             </View>
-
           </View>
 
           {/* Identity card */}
@@ -309,7 +317,10 @@ export default function ProfileTab() {
                     return (
                       <Pressable
                         key={g}
-                        style={[styles.genreChip, selected && styles.genreChipSelected]}
+                        style={[
+                          styles.genreChip,
+                          selected && styles.genreChipSelected,
+                        ]}
                         onPress={() => toggleGenre(g)}
                       >
                         <Text
@@ -365,7 +376,11 @@ export default function ProfileTab() {
               <Text style={styles.sectionLabel}>LOCATION</Text>
               <View style={styles.card}>
                 <View style={styles.locationDisplay}>
-                  <Ionicons name="location-outline" size={16} color={theme.colors.darkMuted} />
+                  <Ionicons
+                    name="location-outline"
+                    size={16}
+                    color={theme.colors.darkMuted}
+                  />
                   <Text style={styles.bio}>{locationStr}</Text>
                 </View>
               </View>
@@ -377,7 +392,12 @@ export default function ProfileTab() {
           <View style={styles.listCard}>
             <View style={styles.row}>
               <View style={styles.rowLeft}>
-                <View style={[styles.brandDot, { backgroundColor: SPOTIFY_BRAND_COLOR }]} />
+                <View
+                  style={[
+                    styles.brandDot,
+                    { backgroundColor: SPOTIFY_BRAND_COLOR },
+                  ]}
+                />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle}>Spotify</Text>
                   <Text style={styles.rowMeta}>{email || "Connected"}</Text>
@@ -442,11 +462,22 @@ export default function ProfileTab() {
               <View style={styles.listCard}>
                 {profile?.instagram && (
                   <Pressable
-                    style={[styles.row, (profile?.tiktok || profile?.website) ? styles.rowBorder : undefined]}
-                    onPress={() => openLink(socialUrl("instagram", profile.instagram!))}
+                    style={[
+                      styles.row,
+                      profile?.tiktok || profile?.website
+                        ? styles.rowBorder
+                        : undefined,
+                    ]}
+                    onPress={() =>
+                      openLink(socialUrl("instagram", profile.instagram!))
+                    }
                   >
                     <View style={styles.rowLeft}>
-                      <Ionicons name="logo-instagram" size={18} color={theme.colors.darkText} />
+                      <Ionicons
+                        name="logo-instagram"
+                        size={18}
+                        color={theme.colors.darkText}
+                      />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rowTitle}>Instagram</Text>
                         <Text style={styles.rowMeta}>
@@ -454,16 +485,29 @@ export default function ProfileTab() {
                         </Text>
                       </View>
                     </View>
-                    <Ionicons name="open-outline" size={16} color={theme.colors.darkMuted} />
+                    <Ionicons
+                      name="open-outline"
+                      size={16}
+                      color={theme.colors.darkMuted}
+                    />
                   </Pressable>
                 )}
                 {profile?.tiktok && (
                   <Pressable
-                    style={[styles.row, profile?.website ? styles.rowBorder : undefined]}
-                    onPress={() => openLink(socialUrl("tiktok", profile.tiktok!))}
+                    style={[
+                      styles.row,
+                      profile?.website ? styles.rowBorder : undefined,
+                    ]}
+                    onPress={() =>
+                      openLink(socialUrl("tiktok", profile.tiktok!))
+                    }
                   >
                     <View style={styles.rowLeft}>
-                      <Ionicons name="logo-tiktok" size={18} color={theme.colors.darkText} />
+                      <Ionicons
+                        name="logo-tiktok"
+                        size={18}
+                        color={theme.colors.darkText}
+                      />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rowTitle}>TikTok</Text>
                         <Text style={styles.rowMeta}>
@@ -471,22 +515,36 @@ export default function ProfileTab() {
                         </Text>
                       </View>
                     </View>
-                    <Ionicons name="open-outline" size={16} color={theme.colors.darkMuted} />
+                    <Ionicons
+                      name="open-outline"
+                      size={16}
+                      color={theme.colors.darkMuted}
+                    />
                   </Pressable>
                 )}
                 {profile?.website && (
                   <Pressable
                     style={styles.row}
-                    onPress={() => openLink(socialUrl("website", profile.website!))}
+                    onPress={() =>
+                      openLink(socialUrl("website", profile.website!))
+                    }
                   >
                     <View style={styles.rowLeft}>
-                      <Ionicons name="globe-outline" size={18} color={theme.colors.darkText} />
+                      <Ionicons
+                        name="globe-outline"
+                        size={18}
+                        color={theme.colors.darkText}
+                      />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rowTitle}>Website</Text>
                         <Text style={styles.rowMeta}>{profile.website}</Text>
                       </View>
                     </View>
-                    <Ionicons name="open-outline" size={16} color={theme.colors.darkMuted} />
+                    <Ionicons
+                      name="open-outline"
+                      size={16}
+                      color={theme.colors.darkMuted}
+                    />
                   </Pressable>
                 )}
               </View>

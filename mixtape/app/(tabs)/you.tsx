@@ -13,7 +13,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 
 import { supabase } from "@/database/db";
-import { getStoredSpotifyToken, syncFanSpotifyData } from "@/utils/useSpotifyAuth";
+import {
+  getStoredSpotifyToken,
+  syncFanSpotifyData,
+} from "@/utils/useSpotifyAuth";
 import theme from "@/assets/theme";
 
 interface Profile {
@@ -74,14 +77,18 @@ export default function YouTab() {
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; };
+    return () => {
+      mounted.current = false;
+    };
   }, []);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (!user || !mounted.current) return;
 
         const { data: profileData } = await supabase
@@ -108,9 +115,11 @@ export default function YouTab() {
           .limit(1)
           .maybeSingle();
 
-        if (spotifyData && mounted.current) setSpotify(spotifyData as SpotifyData);
+        if (spotifyData && mounted.current)
+          setSpotify(spotifyData as SpotifyData);
       } catch (e: any) {
-        if (mounted.current) Alert.alert("Error", e?.message ?? "Could not load profile.");
+        if (mounted.current)
+          Alert.alert("Error", e?.message ?? "Could not load profile.");
       } finally {
         if (mounted.current) setLoading(false);
       }
@@ -127,7 +136,7 @@ export default function YouTab() {
         if (mounted.current) setSigningOut(false);
         return;
       }
-      router.replace("/(sign-in)/sign-in");
+      router.replace("/");
     } catch (e: any) {
       Alert.alert("Sign out failed", e?.message ?? "Network error");
       if (mounted.current) setSigningOut(false);
@@ -149,7 +158,9 @@ export default function YouTab() {
 
       await syncFanSpotifyData(token);
 
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (user) {
         const { data: fresh } = await supabase
           .from("fan_spotify_data")
@@ -161,7 +172,10 @@ export default function YouTab() {
         if (fresh && mounted.current) setSpotify(fresh as SpotifyData);
       }
     } catch (e: any) {
-      Alert.alert("Re-sync failed", e?.message ?? "Could not refresh your listening data.");
+      Alert.alert(
+        "Re-sync failed",
+        e?.message ?? "Could not refresh your listening data.",
+      );
     } finally {
       if (mounted.current) setResyncing(false);
     }
@@ -192,7 +206,11 @@ export default function YouTab() {
             <Text style={styles.username}>@{profile?.username ?? "..."}</Text>
             {location ? (
               <View style={styles.locationRow}>
-                <Ionicons name="location-outline" size={12} color={theme.colors.muted} />
+                <Ionicons
+                  name="location-outline"
+                  size={12}
+                  color={theme.colors.muted}
+                />
                 <Text style={styles.locationText}>{location}</Text>
               </View>
             ) : null}
@@ -205,11 +223,15 @@ export default function YouTab() {
             <Text style={styles.statLabel}>SHARING WITH</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{topTracks.length > 0 ? topTracks.length : "--"}</Text>
+            <Text style={styles.statValue}>
+              {topTracks.length > 0 ? topTracks.length : "--"}
+            </Text>
             <Text style={styles.statLabel}>SPOTIFY{"\n"}TRACKS</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{topArtists.length > 0 ? topArtists.length : "--"}</Text>
+            <Text style={styles.statValue}>
+              {topArtists.length > 0 ? topArtists.length : "--"}
+            </Text>
             <Text style={styles.statLabel}>SPOTIFY{"\n"}ARTISTS</Text>
           </View>
         </View>
@@ -221,9 +243,14 @@ export default function YouTab() {
               {topTracks.map((track: any, i: number) => (
                 <View
                   key={track.id ?? i}
-                  style={[styles.trackRow, i < topTracks.length - 1 && styles.rowBorder]}
+                  style={[
+                    styles.trackRow,
+                    i < topTracks.length - 1 && styles.rowBorder,
+                  ]}
                 >
-                  <Text style={styles.trackRank}>{String(i + 1).padStart(2, "0")}</Text>
+                  <Text style={styles.trackRank}>
+                    {String(i + 1).padStart(2, "0")}
+                  </Text>
                   <View style={styles.trackArt} />
                   <View style={styles.trackInfo}>
                     <Text style={styles.trackTitle} numberOfLines={1}>
@@ -246,9 +273,17 @@ export default function YouTab() {
               {topArtists.map((artist: any, i: number) => (
                 <View
                   key={artist.id ?? i}
-                  style={[styles.artistRow, i < topArtists.length - 1 && styles.rowBorder]}
+                  style={[
+                    styles.artistRow,
+                    i < topArtists.length - 1 && styles.rowBorder,
+                  ]}
                 >
-                  <View style={[styles.artistDot, { backgroundColor: colorFromIndex(i) }]} />
+                  <View
+                    style={[
+                      styles.artistDot,
+                      { backgroundColor: colorFromIndex(i) },
+                    ]}
+                  />
                   <Text style={styles.artistName} numberOfLines={1}>
                     {artist.name}
                   </Text>
@@ -263,10 +298,15 @@ export default function YouTab() {
 
         {!spotify && !loading && (
           <View style={styles.emptyCard}>
-            <Ionicons name="musical-notes-outline" size={28} color={theme.colors.muted} />
+            <Ionicons
+              name="musical-notes-outline"
+              size={28}
+              color={theme.colors.muted}
+            />
             <Text style={styles.emptyTitle}>No listening data yet</Text>
             <Text style={styles.emptyText}>
-              Connect your Spotify account to see your top tracks and artists here.
+              Connect your Spotify account to see your top tracks and artists
+              here.
             </Text>
           </View>
         )}
@@ -280,13 +320,18 @@ export default function YouTab() {
                   <View style={styles.spotifyDot} />
                   <View style={styles.spotifyInfo}>
                     <Text style={styles.spotifyTitle}>Connected</Text>
-                    <Text style={[styles.spotifyMeta, isStale && styles.spotifyMetaStale]}>
+                    <Text
+                      style={[
+                        styles.spotifyMeta,
+                        isStale && styles.spotifyMetaStale,
+                      ]}
+                    >
                       Last synced {relativeSync(spotify.fetched_at)}
                     </Text>
                     {isStale && (
                       <Text style={styles.staleNudge}>
-                        Your listening data is {syncDays} days old. Re-sync to keep
-                        the artists you share with up to date.
+                        Your listening data is {syncDays} days old. Re-sync to
+                        keep the artists you share with up to date.
                       </Text>
                     )}
                   </View>
@@ -301,9 +346,16 @@ export default function YouTab() {
                   <Ionicons
                     name="refresh-outline"
                     size={16}
-                    color={isStale ? theme.colors.secondary : theme.colors.muted}
+                    color={
+                      isStale ? theme.colors.secondary : theme.colors.muted
+                    }
                   />
-                  <Text style={[styles.spotifyRefresh, isStale && styles.spotifyRefreshStale]}>
+                  <Text
+                    style={[
+                      styles.spotifyRefresh,
+                      isStale && styles.spotifyRefreshStale,
+                    ]}
+                  >
                     {resyncing ? "Syncing..." : "Re-sync listening data"}
                   </Text>
                 </View>
@@ -313,7 +365,9 @@ export default function YouTab() {
                   <Ionicons
                     name="chevron-forward"
                     size={14}
-                    color={isStale ? theme.colors.secondary : theme.colors.muted}
+                    color={
+                      isStale ? theme.colors.secondary : theme.colors.muted
+                    }
                   />
                 )}
               </Pressable>
@@ -328,7 +382,11 @@ export default function YouTab() {
             onPress={onSignOut}
             disabled={signingOut}
           >
-            <Ionicons name="log-out-outline" size={18} color={theme.colors.danger} />
+            <Ionicons
+              name="log-out-outline"
+              size={18}
+              color={theme.colors.danger}
+            />
             <Text style={[styles.signOutText, { color: theme.colors.danger }]}>
               {signingOut ? "Signing out..." : "Sign out"}
             </Text>

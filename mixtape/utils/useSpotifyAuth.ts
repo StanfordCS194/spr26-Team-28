@@ -44,7 +44,10 @@ const REDIRECT_URI =
 const CLIENT_ID = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? "";
 
 if (__DEV__) {
-  console.log("[Spotify] Redirect URI (register this in the dashboard):", REDIRECT_URI);
+  console.log(
+    "[Spotify] Redirect URI (register this in the dashboard):",
+    REDIRECT_URI,
+  );
 }
 
 const SCOPES = [
@@ -109,11 +112,22 @@ export function getSpotifyRedirectUri(): string {
   return REDIRECT_URI;
 }
 
+function normalizeSpotifyToken(
+  token: string | null | undefined,
+): string | null {
+  if (!token) return null;
+
+  const trimmed = token.trim();
+  if (!trimmed) return null;
+
+  return trimmed.replace(/^Bearer\s+/i, "").trim();
+}
+
 async function persistTokenResponse(
   tokens: SpotifyTokenResponse,
   fallbackRefreshToken?: string | null,
 ): Promise<string | null> {
-  const accessToken = tokens.access_token;
+  const accessToken = normalizeSpotifyToken(tokens.access_token);
   if (!accessToken) return null;
 
   const expiresInMs = Math.max((tokens.expires_in ?? 3600) * 1000, 0);
@@ -150,30 +164,32 @@ export async function clearStoredSpotifyToken(): Promise<void> {
 // Returns a valid stored access token, refreshing it when possible.
 export async function getStoredSpotifyToken(): Promise<string | null> {
   try {
-    const [[, token], [, at], [, expiresAt], [, refreshToken]] = await AsyncStorage.multiGet([
-      TOKEN_KEY,
-      TOKEN_AT_KEY,
-      TOKEN_EXPIRES_AT_KEY,
-      TOKEN_REFRESH_KEY,
-    ]);
+    const [[, token], [, at], [, expiresAt], [, refreshToken]] =
+      await AsyncStorage.multiGet([
+        TOKEN_KEY,
+        TOKEN_AT_KEY,
+        TOKEN_EXPIRES_AT_KEY,
+        TOKEN_REFRESH_KEY,
+      ]);
+    const normalizedToken = normalizeSpotifyToken(token);
     const expiry = Number(expiresAt);
 
     if (
-      token &&
+      normalizedToken &&
       Number.isFinite(expiry) &&
       Date.now() < expiry - TOKEN_EXPIRY_BUFFER_MS
     ) {
-      return token;
+      return normalizedToken;
     }
 
     const legacyIssuedAt = Number(at);
     if (
-      token &&
+      normalizedToken &&
       !expiresAt &&
       Number.isFinite(legacyIssuedAt) &&
       Date.now() - legacyIssuedAt < TOKEN_MAX_AGE_MS
     ) {
-      return token;
+      return normalizedToken;
     }
 
     if (refreshToken) {
@@ -192,7 +208,23 @@ export async function getStoredSpotifyToken(): Promise<string | null> {
 export async function syncFanSpotifyData(
   token: string,
 ): Promise<FanSpotifyData | null> {
-  const data = await fetchFanData(token);
+  const normalizedToken = normalizeSpotifyToken(token);
+
+  if (!normalizedToken) {
+    throw new Error(
+      "No Spotify access token available. Please reconnect Spotify.",
+    );
+  }
+
+  if (__DEV__) {
+    console.log("[Spotify] Sync starting.", {
+      hasToken: true,
+      tokenLength: normalizedToken.length,
+      tokenStart: normalizedToken.slice(0, 12),
+    });
+  }
+
+  const data = await fetchFanData(normalizedToken);
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -251,6 +283,17 @@ export function useSpotifyAuth() {
         setLoading(true);
         exchangeCodeForToken(code, request.codeVerifier)
           .then(async (tokens) => {
+            if (__DEV__) {
+              console.log("[Spotify] Token response received.", {
+                hasAccessToken: !!tokens?.access_token,
+                accessTokenLength: tokens?.access_token?.length,
+                hasRefreshToken: !!tokens?.refresh_token,
+                expiresIn: tokens?.expires_in,
+                error: tokens?.error,
+                errorDescription: tokens?.error_description,
+              });
+            }
+
             const token = tokens ? await persistTokenResponse(tokens) : null;
             if (token) {
               setError(null);
@@ -282,6 +325,14 @@ export function useSpotifyAuth() {
   // Step 2: Fetch + persist fan data once we have a token
   useEffect(() => {
     if (!accessToken) return;
+
+    if (__DEV__) {
+      console.log("[Spotify] About to sync fan data.", {
+        hasAccessToken: !!accessToken,
+        accessTokenLength: accessToken.length,
+        accessTokenStart: accessToken.slice(0, 12),
+      });
+    }
 
     setLoading(true);
     syncFanSpotifyData(accessToken)
@@ -337,15 +388,21 @@ async function exchangeCodeForToken(
     body: params.toString(),
   });
 
-  const data = await res.json();
+  const text = await res.text();
+
+  let data: SpotifyTokenResponse;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    console.error("Spotify token parse error:", text);
+    throw new Error("Spotify token exchange returned an invalid response.");
+  }
 
   if (!res.ok || data.error) {
-    console.error(
-      "Spotify token error:",
-      data.error,
-      data.error_description,
+    console.error("Spotify token error:", data.error, data.error_description);
+    throw new Error(
+      data.error_description ?? data.error ?? "Spotify token exchange failed.",
     );
-    throw new Error(data.error_description ?? data.error ?? "Spotify token exchange failed.");
   }
 
   return data;
@@ -368,15 +425,20 @@ async function refreshSpotifyAccessToken(
     body: params.toString(),
   });
 
-  const data = (await res.json()) as SpotifyTokenResponse;
+  const text = await res.text();
+
+  let data: SpotifyTokenResponse;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    await clearStoredSpotifyToken();
+    console.error("Spotify refresh parse error:", text);
+    return null;
+  }
 
   if (!res.ok || data.error) {
     await clearStoredSpotifyToken();
-    console.error(
-      "Spotify refresh error:",
-      data.error,
-      data.error_description,
-    );
+    console.error("Spotify refresh error:", data.error, data.error_description);
     return null;
   }
 
@@ -386,34 +448,80 @@ async function refreshSpotifyAccessToken(
 // Fan data fetching
 
 async function spotifyGet<T>(url: string, token: string): Promise<T> {
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const normalizedToken = normalizeSpotifyToken(token);
 
-  if (!res.ok) {
-    throw new Error(`Spotify API error ${res.status} on ${url}`);
+  if (!normalizedToken) {
+    throw new Error(`No Spotify token provided before calling ${url}`);
   }
 
-  return res.json();
+  if (__DEV__) {
+    console.log("[Spotify GET]", {
+      url,
+      hasToken: true,
+      tokenLength: normalizedToken.length,
+      tokenStart: normalizedToken.slice(0, 12),
+    });
+  }
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${normalizedToken}` },
+  });
+
+  const text = await res.text();
+
+  if (!res.ok) {
+    console.error("[Spotify API failed]", {
+      url,
+      status: res.status,
+      body: text,
+    });
+
+    throw new Error(`Spotify API error ${res.status} on ${url}: ${text}`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Spotify API returned invalid JSON on ${url}`);
+  }
 }
 
 async function fetchFanData(token: string): Promise<FanSpotifyData> {
-  const [profile, topTracksRes, topArtistsRes, recentlyPlayedRes] =
-    await Promise.all([
-      spotifyGet<any>(ENDPOINTS.me, token),
-      spotifyGet<SpotifyApi.UsersTopTracksResponse>(
-        `${ENDPOINTS.topTracks}?time_range=medium_term&limit=50`,
-        token,
-      ),
-      spotifyGet<SpotifyApi.UsersTopArtistsResponse>(
-        `${ENDPOINTS.topArtists}?time_range=medium_term&limit=50`,
-        token,
-      ),
-      spotifyGet<SpotifyApi.UsersRecentlyPlayedTracksResponse>(
-        `${ENDPOINTS.recentlyPlayed}?limit=50`,
-        token,
-      ),
-    ]);
+  const normalizedToken = normalizeSpotifyToken(token);
+
+  if (!normalizedToken) {
+    throw new Error(
+      "No Spotify access token available before fetching fan data.",
+    );
+  }
+
+  const profile = await spotifyGet<any>(ENDPOINTS.me, normalizedToken);
+  console.log("[Spotify] Profile fetched:", profile.id);
+
+  const topTracksRes = await spotifyGet<SpotifyApi.UsersTopTracksResponse>(
+    `${ENDPOINTS.topTracks}?time_range=medium_term&limit=50`,
+    normalizedToken,
+  );
+  console.log("[Spotify] Top tracks fetched:", topTracksRes.items?.length ?? 0);
+
+  const topArtistsRes = await spotifyGet<SpotifyApi.UsersTopArtistsResponse>(
+    `${ENDPOINTS.topArtists}?time_range=medium_term&limit=50`,
+    normalizedToken,
+  );
+  console.log(
+    "[Spotify] Top artists fetched:",
+    topArtistsRes.items?.length ?? 0,
+  );
+
+  const recentlyPlayedRes =
+    await spotifyGet<SpotifyApi.UsersRecentlyPlayedTracksResponse>(
+      `${ENDPOINTS.recentlyPlayed}?limit=50`,
+      normalizedToken,
+    );
+  console.log(
+    "[Spotify] Recently played fetched:",
+    recentlyPlayedRes.items?.length ?? 0,
+  );
 
   return {
     profile: {
