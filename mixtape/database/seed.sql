@@ -6,9 +6,9 @@
 --
 --   * app/(artist-tabs)/index.tsx  (dashboard / insights)
 --       - counts consenting fans
---       - tallies every consenting fan's fan_spotify_data.top_tracks /
---         .top_artists (grouped by id, falling back to name)
---       - sums recently_played.length across fans as "plays"
+--       - counts recent share events from fan_follows.consented_at
+--       - tallies fan_follows.top_track as fan favorite songs
+--       - counts fan cities from profiles(city,country)
 --   * app/(artist-tabs)/fans.tsx   (world listener map)
 --       - joins fan_follows -> profiles(city,country) for consenting fans and
 --         geocodes city+country with the "country-state-city" npm package
