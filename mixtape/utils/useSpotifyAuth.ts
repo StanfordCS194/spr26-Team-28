@@ -455,7 +455,13 @@ async function refreshSpotifyAccessToken(
 
 // Fan data fetching
 
-async function spotifyGet<T>(url: string, token: string): Promise<T> {
+async function spotifyGet<T>(
+  url: string,
+  token: string,
+  // warnOnly: the caller treats failures as non-fatal (catches and degrades),
+  // so log them as warnings instead of errors.
+  opts?: { warnOnly?: boolean },
+): Promise<T> {
   const normalizedToken = normalizeSpotifyToken(token);
 
   if (!normalizedToken) {
@@ -478,11 +484,12 @@ async function spotifyGet<T>(url: string, token: string): Promise<T> {
   const text = await res.text();
 
   if (!res.ok) {
-    console.error("[Spotify API failed]", {
-      url,
-      status: res.status,
-      body: text,
-    });
+    const failure = { url, status: res.status, body: text };
+    if (opts?.warnOnly) {
+      console.warn("[Spotify API failed]", failure);
+    } else {
+      console.error("[Spotify API failed]", failure);
+    }
 
     throw new Error(`Spotify API error ${res.status} on ${url}: ${text}`);
   }
@@ -521,15 +528,25 @@ async function fetchFanData(token: string): Promise<FanSpotifyData> {
     topArtistsRes.items?.length ?? 0,
   );
 
-  const recentlyPlayedRes =
-    await spotifyGet<SpotifyApi.UsersRecentlyPlayedTracksResponse>(
-      `${ENDPOINTS.recentlyPlayed}?limit=50`,
-      normalizedToken,
+  // Recently played needs the user-read-recently-played scope. Pre-issued dev
+  // tokens (EXPO_PUBLIC_SPOTIFY_TOKEN) are often minted without it, so treat
+  // this fetch as best-effort instead of failing the whole sync on a 403.
+  let recentlyPlayed: SpotifyApi.PlayHistoryObject[] = [];
+  try {
+    const recentlyPlayedRes =
+      await spotifyGet<SpotifyApi.UsersRecentlyPlayedTracksResponse>(
+        `${ENDPOINTS.recentlyPlayed}?limit=50`,
+        normalizedToken,
+        { warnOnly: true },
+      );
+    recentlyPlayed = recentlyPlayedRes.items ?? [];
+    console.log("[Spotify] Recently played fetched:", recentlyPlayed.length);
+  } catch (e: any) {
+    console.warn(
+      "[Spotify] Recently played unavailable; continuing without it:",
+      e?.message ?? e,
     );
-  console.log(
-    "[Spotify] Recently played fetched:",
-    recentlyPlayedRes.items?.length ?? 0,
-  );
+  }
 
   return {
     profile: {
@@ -540,6 +557,6 @@ async function fetchFanData(token: string): Promise<FanSpotifyData> {
     },
     topTracks: topTracksRes.items ?? [],
     topArtists: topArtistsRes.items ?? [],
-    recentlyPlayed: recentlyPlayedRes.items ?? [],
+    recentlyPlayed,
   };
 }
