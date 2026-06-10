@@ -28,6 +28,10 @@
     "web": {
       "favicon": "./assets/images/logo.png"
     },
-    "plugins": ["expo-router", "expo-font"]
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "@react-native-community/datetimepicker"
+    ]
   }
 }
