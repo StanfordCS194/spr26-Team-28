@@ -1,8 +1,9 @@
 -- ============================================================================
 -- Mixtape - demo seed data  (issue #29)
 -- ============================================================================
--- Populates one demo ARTIST account ("Nova Sky") plus ~20 consenting fans so
--- that the artist-facing screens render with real, varied data:
+-- Populates one primary demo ARTIST account ("Nova Sky"), three additional
+-- demo artists for discovery/collaboration, plus ~20 consenting fans so that
+-- the artist-facing screens render with real, varied data:
 --
 --   * app/(artist-tabs)/index.tsx  (dashboard / insights)
 --       - counts consenting fans
@@ -60,15 +61,15 @@
 --     London / United Kingdom          Toronto / Canada
 --     Berlin / Germany                 Sydney / Australia
 --     Tokyo / Japan                    Paris / France
---     Ciudad de México / Mexico
---   NB: it is "New York City" (not "New York") and "Ciudad de México" (not
+--     Ciudad de Mexico / Mexico
+--   NB: it is "New York City" (not "New York") and "Ciudad de Mexico" (not
 --   "Mexico City") - the obvious spellings are NOT in the dataset and would
 --   silently drop those pins.
 --
 -- WHAT THIS CREATES (when the artist did not previously exist)
---   auth.users        : 21  (1 artist + 20 fans)
---   profiles          : 21  (1 artist + 20 fans)
---   releases          :  4  (all owned by the artist)
+--   auth.users        : 24  (4 artists + 20 fans)
+--   profiles          : 24  (4 artists + 20 fans)
+--   releases          : 13  (4 Nova Sky releases + 9 collaborator releases)
 --   fan_follows       : 20  (one consented follow per fan -> artist)
 --   fan_spotify_data  : 20  (one row per fan)
 -- ============================================================================
@@ -133,6 +134,65 @@ declare
   -- "Artists your fans listen to" list always features the artist themselves.
   nova_artist jsonb := '{"id":"nova-art-001","name":"Nova Sky","genres":["dream pop","indie pop","synth-pop"]}'::jsonb;
 
+  -- Additional artist accounts give For You and Collaborate enough depth to
+  -- show meaningful matches after a local reset.
+  demo_artists jsonb := '[
+    {
+      "u":"lunavale",
+      "email":"lunavale@mixtape.com",
+      "n":"Luna Vale",
+      "bio":"Indie-pop songwriter building hazy hooks and bright synth lines.",
+      "genre":"indie pop, dream pop, pop",
+      "city":"London",
+      "co":"United Kingdom",
+      "instagram":"lunavalemusic",
+      "tiktok":"lunavalemusic",
+      "website":"https://lunavale.example.com",
+      "vector":{"indie-pop":1,"dream-pop":0.6,"pop":0.4,"synth-pop":0.3},
+      "releases":[
+        {"title":"Glass Moon","type":"single","date":"2024-02-02","tracks":1,"album":null,"genres":[1,2,3]},
+        {"title":"Soft Signal","type":"ep","date":"2024-09-13","tracks":5,"album":"Soft Signal","genres":[2,3,4]},
+        {"title":"Silver Weather","type":"single","date":"2025-01-24","tracks":1,"album":null,"genres":[2,3]}
+      ]
+    },
+    {
+      "u":"circuitbloom",
+      "email":"circuitbloom@mixtape.com",
+      "n":"Circuit Bloom",
+      "bio":"Electronic duo pairing club drums with cinematic synth-pop.",
+      "genre":"electronic, synth-pop, pop",
+      "city":"Berlin",
+      "co":"Germany",
+      "instagram":"circuitbloom",
+      "tiktok":"circuitbloom",
+      "website":"https://circuitbloom.example.com",
+      "vector":{"electronic":1,"synth-pop":0.8,"pop":0.35},
+      "releases":[
+        {"title":"Static Hearts","type":"single","date":"2023-11-10","tracks":1,"album":null,"genres":[4,5]},
+        {"title":"Afterimage Club","type":"ep","date":"2024-06-21","tracks":4,"album":"Afterimage Club","genres":[1,4,5]},
+        {"title":"Bright Machines","type":"album","date":"2025-03-07","tracks":9,"album":"Bright Machines","genres":[4,5]}
+      ]
+    },
+    {
+      "u":"harborglass",
+      "email":"harborglass@mixtape.com",
+      "n":"Harbor Glass",
+      "bio":"Coastal folk-rock with warm vocals, live drums, and slow-burn choruses.",
+      "genre":"folk, rock, indie pop",
+      "city":"Toronto",
+      "co":"Canada",
+      "instagram":"harborglass",
+      "tiktok":"harborglass",
+      "website":"https://harborglass.example.com",
+      "vector":{"folk":1,"rock":0.65,"indie-pop":0.25},
+      "releases":[
+        {"title":"North Pier","type":"single","date":"2024-01-19","tracks":1,"album":null,"genres":[6,7]},
+        {"title":"Low Tide Room","type":"ep","date":"2024-10-04","tracks":4,"album":"Low Tide Room","genres":[2,6,7]},
+        {"title":"House Lights","type":"single","date":"2025-04-18","tracks":1,"album":null,"genres":[6,7]}
+      ]
+    }
+  ]'::jsonb;
+
   -- ---- The 20 demo fans -----------------------------------------------------
   -- Columns (per element):
   --   1 username   2 display name   3 city            4 country
@@ -143,41 +203,45 @@ declare
   --              per-fan rotating window (so tallies form a gradient, not a tie)
   --   8 "art"    how many artists to add from the shared pool (also rotating)
   --   9 "plays"  length of recently_played to synthesise (drives "plays")
+  --  10 "age"    days since this fan started sharing (drives growth/recency)
   --
   -- Cities are intentionally weighted (Los Angeles / New York City / London
   -- get the most fans) so the map has clear hot spots, and top_track choices
   -- cluster per city so each pin has an obvious "Top Song".
   fans jsonb := '[
-    {"u":"fan_la_maya",    "n":"Maya Reyes",      "city":"Los Angeles",      "co":"United States",  "top":"Neon Tide",    "nova":4, "oth":5, "art":6, "plays":42},
-    {"u":"fan_la_diego",   "n":"Diego Santos",    "city":"Los Angeles",      "co":"United States",  "top":"Neon Tide",    "nova":3, "oth":4, "art":5, "plays":31},
-    {"u":"fan_la_priya",   "n":"Priya Anand",     "city":"Los Angeles",      "co":"United States",  "top":"Paper Planets","nova":5, "oth":3, "art":7, "plays":50},
-    {"u":"fan_la_jordan",  "n":"Jordan Blake",    "city":"Los Angeles",      "co":"United States",  "top":"Neon Tide",    "nova":2, "oth":6, "art":4, "plays":18},
-    {"u":"fan_nyc_sam",    "n":"Sam Carter",      "city":"New York City",    "co":"United States",  "top":"Slow Comet",   "nova":4, "oth":4, "art":6, "plays":37},
-    {"u":"fan_nyc_aisha",  "n":"Aisha Khan",      "city":"New York City",    "co":"United States",  "top":"Slow Comet",   "nova":3, "oth":5, "art":5, "plays":29},
-    {"u":"fan_nyc_leo",    "n":"Leo Marchetti",   "city":"New York City",    "co":"United States",  "top":"Neon Tide",    "nova":5, "oth":2, "art":8, "plays":46},
-    {"u":"fan_chi_tasha",  "n":"Tasha Brooks",    "city":"Chicago",          "co":"United States",  "top":"Velvet Static","nova":3, "oth":4, "art":5, "plays":24},
-    {"u":"fan_chi_omar",   "n":"Omar Haddad",     "city":"Chicago",          "co":"United States",  "top":"Velvet Static","nova":2, "oth":5, "art":4, "plays":15},
-    {"u":"fan_ldn_freya",  "n":"Freya Walsh",     "city":"London",           "co":"United Kingdom", "top":"Paper Planets","nova":4, "oth":4, "art":6, "plays":40},
-    {"u":"fan_ldn_callum", "n":"Callum Reid",     "city":"London",           "co":"United Kingdom", "top":"Paper Planets","nova":3, "oth":5, "art":5, "plays":33},
-    {"u":"fan_ldn_nadia",  "n":"Nadia Osei",      "city":"London",           "co":"United Kingdom", "top":"Hold the Line","nova":5, "oth":3, "art":7, "plays":48},
-    {"u":"fan_tor_ethan",  "n":"Ethan Tremblay",  "city":"Toronto",          "co":"Canada",         "top":"Slow Comet",   "nova":3, "oth":4, "art":5, "plays":27},
-    {"u":"fan_tor_sofia",  "n":"Sofia Nguyen",    "city":"Toronto",          "co":"Canada",         "top":"Slow Comet",   "nova":2, "oth":6, "art":4, "plays":21},
-    {"u":"fan_ber_lena",   "n":"Lena Fischer",    "city":"Berlin",           "co":"Germany",        "top":"Velvet Static","nova":4, "oth":3, "art":6, "plays":35},
-    {"u":"fan_ber_max",    "n":"Max Bauer",       "city":"Berlin",           "co":"Germany",        "top":"Velvet Static","nova":3, "oth":5, "art":5, "plays":26},
-    {"u":"fan_syd_chloe",  "n":"Chloe Harris",    "city":"Sydney",           "co":"Australia",      "top":"Hold the Line","nova":3, "oth":4, "art":5, "plays":23},
-    {"u":"fan_tyo_haruki", "n":"Haruki Tanaka",   "city":"Tokyo",            "co":"Japan",          "top":"Neon Tide",    "nova":4, "oth":3, "art":6, "plays":34},
-    {"u":"fan_par_camille","n":"Camille Laurent", "city":"Paris",            "co":"France",         "top":"Paper Planets","nova":3, "oth":4, "art":5, "plays":28},
-    {"u":"fan_mex_valeria","n":"Valeria Cruz",    "city":"Ciudad de México", "co":"Mexico",         "top":"Hold the Line","nova":4, "oth":4, "art":6, "plays":30}
+    {"u":"fan_la_maya",    "n":"Maya Reyes",      "city":"Los Angeles",      "co":"United States",  "top":"Neon Tide",    "nova":4, "oth":5, "art":6, "plays":42, "age":1},
+    {"u":"fan_la_diego",   "n":"Diego Santos",    "city":"Los Angeles",      "co":"United States",  "top":"Neon Tide",    "nova":3, "oth":4, "art":5, "plays":31, "age":2},
+    {"u":"fan_la_priya",   "n":"Priya Anand",     "city":"Los Angeles",      "co":"United States",  "top":"Paper Planets","nova":5, "oth":3, "art":7, "plays":50, "age":5},
+    {"u":"fan_la_jordan",  "n":"Jordan Blake",    "city":"Los Angeles",      "co":"United States",  "top":"Neon Tide",    "nova":2, "oth":6, "art":4, "plays":18, "age":9},
+    {"u":"fan_nyc_sam",    "n":"Sam Carter",      "city":"New York City",    "co":"United States",  "top":"Slow Comet",   "nova":4, "oth":4, "art":6, "plays":37, "age":14},
+    {"u":"fan_nyc_aisha",  "n":"Aisha Khan",      "city":"New York City",    "co":"United States",  "top":"Slow Comet",   "nova":3, "oth":5, "art":5, "plays":29, "age":22},
+    {"u":"fan_nyc_leo",    "n":"Leo Marchetti",   "city":"New York City",    "co":"United States",  "top":"Neon Tide",    "nova":5, "oth":2, "art":8, "plays":46, "age":31},
+    {"u":"fan_chi_tasha",  "n":"Tasha Brooks",    "city":"Chicago",          "co":"United States",  "top":"Velvet Static","nova":3, "oth":4, "art":5, "plays":24, "age":45},
+    {"u":"fan_chi_omar",   "n":"Omar Haddad",     "city":"Chicago",          "co":"United States",  "top":"Velvet Static","nova":2, "oth":5, "art":4, "plays":15, "age":58},
+    {"u":"fan_ldn_freya",  "n":"Freya Walsh",     "city":"London",           "co":"United Kingdom", "top":"Paper Planets","nova":4, "oth":4, "art":6, "plays":40, "age":74},
+    {"u":"fan_ldn_callum", "n":"Callum Reid",     "city":"London",           "co":"United Kingdom", "top":"Paper Planets","nova":3, "oth":5, "art":5, "plays":33, "age":93},
+    {"u":"fan_ldn_nadia",  "n":"Nadia Osei",      "city":"London",           "co":"United Kingdom", "top":"Hold the Line","nova":5, "oth":3, "art":7, "plays":48, "age":115},
+    {"u":"fan_tor_ethan",  "n":"Ethan Tremblay",  "city":"Toronto",          "co":"Canada",         "top":"Slow Comet",   "nova":3, "oth":4, "art":5, "plays":27, "age":139},
+    {"u":"fan_tor_sofia",  "n":"Sofia Nguyen",    "city":"Toronto",          "co":"Canada",         "top":"Slow Comet",   "nova":2, "oth":6, "art":4, "plays":21, "age":168},
+    {"u":"fan_ber_lena",   "n":"Lena Fischer",    "city":"Berlin",           "co":"Germany",        "top":"Velvet Static","nova":4, "oth":3, "art":6, "plays":35, "age":196},
+    {"u":"fan_ber_max",    "n":"Max Bauer",       "city":"Berlin",           "co":"Germany",        "top":"Velvet Static","nova":3, "oth":5, "art":5, "plays":26, "age":229},
+    {"u":"fan_syd_chloe",  "n":"Chloe Harris",    "city":"Sydney",           "co":"Australia",      "top":"Hold the Line","nova":3, "oth":4, "art":5, "plays":23, "age":260},
+    {"u":"fan_tyo_haruki", "n":"Haruki Tanaka",   "city":"Tokyo",            "co":"Japan",          "top":"Neon Tide",    "nova":4, "oth":3, "art":6, "plays":34, "age":295},
+    {"u":"fan_par_camille","n":"Camille Laurent", "city":"Paris",            "co":"France",         "top":"Paper Planets","nova":3, "oth":4, "art":5, "plays":28, "age":332},
+    {"u":"fan_mex_valeria","n":"Valeria Cruz",    "city":"Ciudad de Mexico", "co":"Mexico",         "top":"Hold the Line","nova":4, "oth":4, "art":6, "plays":30, "age":370}
   ]'::jsonb;
 
-  fan        jsonb;
-  top_tracks jsonb;
-  top_arts   jsonb;
-  recent     jsonb;
-  i          int;
-  off        int := 0;   -- per-fan rotating offset into the "other" pools
-  n_oth      int;        -- jsonb_array_length(other_tracks),  cached before loop
-  n_art      int;        -- jsonb_array_length(other_artists), cached before loop
+  demo_artist    jsonb;
+  demo_artist_id uuid;
+  demo_release   jsonb;
+  fan            jsonb;
+  top_tracks     jsonb;
+  top_arts       jsonb;
+  recent         jsonb;
+  i              int;
+  off            int := 0;   -- per-fan rotating offset into the "other" pools
+  n_oth          int;        -- jsonb_array_length(other_tracks),  cached before loop
+  n_art          int;        -- jsonb_array_length(other_artists), cached before loop
 begin
   -- ---- Idempotency guard ----------------------------------------------------
   -- If the demo artist already exists, assume the whole demo set is present and
@@ -246,6 +310,82 @@ begin
     (artist_id, 'Neon Tide',       'single', date '2024-08-09', 1,  null,             array[2, 4]),
     (artist_id, 'Afterglow',       'album',  date '2025-02-14', 11, 'Afterglow',       array[2, 3, 4]);
 
+  -- 1b) Additional artists for discovery and collaboration demos.
+  for demo_artist in select * from jsonb_array_elements(demo_artists)
+  loop
+    demo_artist_id := gen_random_uuid();
+
+    insert into auth.users (
+      instance_id, id, aud, role, email,
+      encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data,
+      created_at, updated_at,
+      confirmation_token, recovery_token,
+      email_change, email_change_token_new
+    ) values (
+      zero_instance, demo_artist_id, 'authenticated', 'authenticated',
+      demo_artist->>'email',
+      crypt(demo_password, gen_salt('bf')), now(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      jsonb_build_object('name', demo_artist->>'n', 'username', demo_artist->>'u'),
+      now(), now(),
+      '', '', '', ''
+    );
+
+    insert into auth.identities (
+      provider_id, user_id, identity_data, provider,
+      last_sign_in_at, created_at, updated_at
+    ) values (
+      demo_artist_id::text, demo_artist_id,
+      jsonb_build_object(
+        'sub', demo_artist_id::text,
+        'email', demo_artist->>'email',
+        'email_verified', false,
+        'phone_verified', false
+      ),
+      'email',
+      now(), now(), now()
+    );
+
+    insert into public.profiles (
+      id, name, username, role, bio, genre, city, country,
+      instagram, tiktok, website, genre_vector
+    ) values (
+      demo_artist_id,
+      demo_artist->>'n',
+      demo_artist->>'u',
+      'artist',
+      demo_artist->>'bio',
+      demo_artist->>'genre',
+      demo_artist->>'city',
+      demo_artist->>'co',
+      demo_artist->>'instagram',
+      demo_artist->>'tiktok',
+      demo_artist->>'website',
+      demo_artist->'vector'
+    );
+
+    for demo_release in select * from jsonb_array_elements(demo_artist->'releases')
+    loop
+      insert into public.releases (
+        artist_id, title, release_type, release_date, track_count,
+        album_title, genre_ids
+      )
+      values (
+        demo_artist_id,
+        demo_release->>'title',
+        demo_release->>'type',
+        (demo_release->>'date')::date,
+        (demo_release->>'tracks')::int,
+        nullif(demo_release->>'album', ''),
+        array(
+          select genre_id.value::int
+          from jsonb_array_elements_text(demo_release->'genres') as genre_id(value)
+        )
+      );
+    end loop;
+  end loop;
+
   -- ==========================================================================
   -- 2) FANS - for each: auth.users -> profile -> fan_follows -> spotify data
   -- ==========================================================================
@@ -300,7 +440,12 @@ begin
     -- --- fan_follows (CONSENTED - consented_at must be non-null) -----------
     -- top_track is the free-text favourite surfaced per-city on the map.
     insert into public.fan_follows (fan_id, artist_id, consented_at, top_track)
-    values (fan_id, artist_id, now(), fan->>'top');
+    values (
+      fan_id,
+      artist_id,
+      now() - make_interval(days => (fan->>'age')::int),
+      fan->>'top'
+    );
 
     -- --- fan_spotify_data -------------------------------------------------
     -- Synthetic per-fan Spotify-like snapshot. Fan screens show each fan their
@@ -363,8 +508,8 @@ begin
     );
   end loop;
 
-  raise notice 'Seed complete: artist % + % fans inserted.',
-    artist_email, jsonb_array_length(fans);
+  raise notice 'Seed complete: artist % + % collaborator artists + % fans inserted.',
+    artist_email, jsonb_array_length(demo_artists), jsonb_array_length(fans);
 end $$;
 
 
@@ -374,5 +519,10 @@ end $$;
 -- fan_spotify_data and releases via ON DELETE CASCADE. Uncomment to use.
 -- ============================================================================
 -- delete from auth.users
--- where email = 'novasky@mixtape.com'
+-- where email in (
+--   'novasky@mixtape.com',
+--   'lunavale@mixtape.com',
+--   'circuitbloom@mixtape.com',
+--   'harborglass@mixtape.com'
+-- )
 --    or email like 'fan_%@mixtape.com';
