@@ -25,27 +25,9 @@ import theme from "@/assets/theme";
 interface Release {
   id: string;
   title: string;
-  release_type: "single" | "ep" | "album";
-  release_date: string | null;
+  album_title: string | null;
   track_count: number;
-}
-
-const TYPE_LABELS: Record<string, string> = {
-  single: "Single",
-  ep: "EP",
-  album: "Album",
-};
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "Unreleased";
-  const d = new Date(iso.includes("T") ? iso : `${iso}T00:00:00`);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function colorForType(t: string): string {
-  if (t === "album") return theme.colors.secondary;
-  if (t === "ep") return theme.colors.primary;
-  return "rgba(255,255,255,0.15)";
+  fan_count: number;
 }
 
 function parseTrackCount(value: string): number {
@@ -60,17 +42,9 @@ export default function ReleasesTab() {
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // New release form fields.
   const [newTitle, setNewTitle] = useState("");
-  const [newType, setNewType] = useState<"single" | "ep" | "album">("single");
-  const [newTracks, setNewTracks] = useState("1");
-
-  function resetForm() {
-    setNewTitle("");
-    setNewType("single");
-    setNewTracks("1");
-    setAdding(false);
-  }
+  const [newKind, setNewKind] = useState<"single" | "album">("single");
+  const [newAlbumTitle, setNewAlbumTitle] = useState("");
 
   useEffect(() => {
     mounted.current = true;
@@ -85,19 +59,44 @@ export default function ReleasesTab() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || !mounted.current) return;
 
-      const { data, error } = await supabase
-        .from("releases")
-        .select("id, title, release_type, release_date, track_count")
-        .eq("artist_id", user.id)
-        .order("release_date", { ascending: false });
+      const [releasesRes, followsRes] = await Promise.all([
+        supabase
+          .from("releases")
+          .select("id, title, album_title, track_count")
+          .eq("artist_id", user.id),
+        supabase
+          .from("fan_follows")
+          .select("top_track")
+          .eq("artist_id", user.id)
+          .not("top_track", "is", null),
+      ]);
 
-      if (error && error.code !== "PGRST116" && error.code !== "42P01") {
-        Alert.alert("Error", error.message);
+      if (releasesRes.error && releasesRes.error.code !== "PGRST116" && releasesRes.error.code !== "42P01") {
+        Alert.alert("Error", releasesRes.error.message);
         return;
       }
-      if (mounted.current) setReleases((data as Release[]) ?? []);
+
+      const rawReleases = (releasesRes.data ?? []) as Omit<Release, "fan_count">[];
+
+      const fanCounts: Record<string, number> = {};
+      for (const row of followsRes.data ?? []) {
+        if (row.top_track) {
+          fanCounts[row.top_track] = (fanCounts[row.top_track] ?? 0) + 1;
+        }
+      }
+
+      const withCounts: Release[] = rawReleases.map((r) => ({
+        ...r,
+        fan_count: fanCounts[r.title] ?? 0,
+      }));
+
+      withCounts.sort((a, b) =>
+        b.fan_count - a.fan_count || a.title.localeCompare(b.title)
+      );
+
+      if (mounted.current) setReleases(withCounts);
     } catch (e: any) {
-      // The releases table may not exist yet. Show empty state gracefully.
+      // releases table may not exist yet
     } finally {
       if (mounted.current) setLoading(false);
     }
@@ -105,6 +104,7 @@ export default function ReleasesTab() {
 
   async function saveRelease() {
     if (!newTitle.trim()) return;
+    if (newKind === "album" && !newAlbumTitle.trim()) return;
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -119,8 +119,8 @@ export default function ReleasesTab() {
         .insert({
           artist_id: user.id,
           title: newTitle.trim(),
-          release_type: newType,
-          track_count: trackCount,
+          album_title: newKind === "album" ? newAlbumTitle.trim() : null,
+          track_count: newKind === "single" ? 1 : 0,
         })
         .select()
         .single();
@@ -130,15 +130,27 @@ export default function ReleasesTab() {
         return;
       }
       if (data && mounted.current) {
-        setReleases((prev) => [data as Release, ...prev]);
+        setReleases((prev) => [...prev, { ...(data as Omit<Release, "fan_count">), fan_count: 0 }]);
       }
-      resetForm();
+      setNewTitle("");
+      setNewKind("single");
+      setNewAlbumTitle("");
+      setAdding(false);
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not save release.");
     } finally {
       if (mounted.current) setSaving(false);
     }
   }
+
+  function cancelForm() {
+    setAdding(false);
+    setNewTitle("");
+    setNewKind("single");
+    setNewAlbumTitle("");
+  }
+
+  const canSave = !!newTitle.trim() && (newKind === "single" || !!newAlbumTitle.trim());
 
   return (
     <SafeAreaView style={styles.container}>
@@ -162,67 +174,61 @@ export default function ReleasesTab() {
 
         {adding && (
           <View style={styles.formCard}>
-            <Text style={styles.formLabel}>TITLE</Text>
-            <TextInput
-              style={styles.formInput}
-              value={newTitle}
-              onChangeText={setNewTitle}
-              placeholder="Release title"
-              placeholderTextColor={theme.colors.darkMuted}
-              autoFocus
-            />
-
-            <Text style={[styles.formLabel, { marginTop: 14 }]}>TYPE</Text>
+            {/* Kind picker */}
+            <Text style={styles.formLabel}>TYPE</Text>
             <View style={styles.typeRow}>
-              {(["single", "ep", "album"] as const).map((t) => (
+              {(["single", "album"] as const).map((k) => (
                 <Pressable
-                  key={t}
-                  style={[styles.typeChip, newType === t && styles.typeChipSelected]}
-                  onPress={() => setNewType(t)}
+                  key={k}
+                  style={[styles.typeChip, newKind === k && styles.typeChipSelected]}
+                  onPress={() => { setNewKind(k); setNewAlbumTitle(""); }}
                 >
-                  <Text
-                    style={[
-                      styles.typeChipText,
-                      newType === t && styles.typeChipTextSelected,
-                    ]}
-                  >
-                    {TYPE_LABELS[t]}
+                  <Text style={[styles.typeChipText, newKind === k && styles.typeChipTextSelected]}>
+                    {k === "single" ? "Single" : "Album"}
                   </Text>
                 </Pressable>
               ))}
             </View>
 
-            <Text style={[styles.formLabel, { marginTop: 14 }]}>TRACKS</Text>
+            {/* Album title — only when album is selected */}
+            {newKind === "album" && (
+              <>
+                <Text style={[styles.formLabel, { marginTop: 14 }]}>ALBUM TITLE</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={newAlbumTitle}
+                  onChangeText={setNewAlbumTitle}
+                  placeholder="Album name"
+                  placeholderTextColor={theme.colors.darkMuted}
+                  autoFocus
+                />
+              </>
+            )}
+
+            {/* Track / song title */}
+            <Text style={[styles.formLabel, { marginTop: 14 }]}>
+              {newKind === "single" ? "TITLE" : "TRACK TITLE"}
+            </Text>
             <TextInput
               style={styles.formInput}
-              value={newTracks}
-              onChangeText={(t) => setNewTracks(t.replace(/[^0-9]/g, ""))}
-              onBlur={() => setNewTracks(String(parseTrackCount(newTracks)))}
-              placeholder="Number of tracks"
+              value={newTitle}
+              onChangeText={setNewTitle}
+              placeholder={newKind === "single" ? "Song title" : "Track name"}
               placeholderTextColor={theme.colors.darkMuted}
-              keyboardType="number-pad"
-              maxLength={3}
+              autoFocus={newKind === "single"}
             />
 
             <View style={styles.formActions}>
-              <Pressable
-                style={styles.formCancel}
-                onPress={resetForm}
-              >
+              <Pressable style={styles.formCancel} onPress={cancelForm}>
                 <Text style={styles.formCancelText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[
-                  styles.formSave,
-                  (!newTitle.trim() || saving) && { opacity: 0.5 },
-                ]}
+                style={[styles.formSave, (!canSave || saving) && { opacity: 0.5 }]}
                 onPress={saveRelease}
-                disabled={!newTitle.trim() || saving}
+                disabled={!canSave || saving}
               >
                 <Ionicons name="checkmark" size={16} color={theme.colors.darkText} />
-                <Text style={styles.formSaveText}>
-                  {saving ? "Saving..." : "Save"}
-                </Text>
+                <Text style={styles.formSaveText}>{saving ? "Saving..." : "Save"}</Text>
               </Pressable>
             </View>
           </View>
@@ -232,20 +238,22 @@ export default function ReleasesTab() {
           releases.map((release) => (
             <View key={release.id} style={styles.releaseCard}>
               <View style={styles.releaseTop}>
-                <View style={[styles.artPlaceholder, { borderColor: colorForType(release.release_type) }]}>
+                <View style={[styles.artPlaceholder, { borderColor: release.album_title ? theme.colors.secondary : "rgba(255,255,255,0.15)" }]}>
                   <Ionicons name="disc-outline" size={24} color={theme.colors.darkMuted} />
                 </View>
                 <View style={styles.releaseInfo}>
                   <Text style={styles.releaseTitle}>{release.title}</Text>
                   <View style={styles.releaseMeta}>
-                    <View style={[styles.typeBadge, { backgroundColor: colorForType(release.release_type) }]}>
+                    <View style={[styles.typeBadge, { backgroundColor: release.album_title ? theme.colors.secondary : "rgba(255,255,255,0.15)" }]}>
                       <Text style={styles.typeBadgeText}>
-                        {TYPE_LABELS[release.release_type] ?? release.release_type}
+                        {release.album_title ? release.album_title : "Single"}
                       </Text>
                     </View>
-                    <Text style={styles.releaseDate}>
-                      {formatDate(release.release_date)}
-                    </Text>
+                    {release.fan_count > 0 && (
+                      <Text style={styles.fanCount}>
+                        {release.fan_count} {release.fan_count === 1 ? "fan" : "fans"}
+                      </Text>
+                    )}
                   </View>
                 </View>
               </View>
@@ -264,10 +272,7 @@ export default function ReleasesTab() {
               Add your singles, EPs, and albums to track how fans engage with your music.
             </Text>
             {!adding && (
-              <Pressable
-                style={styles.emptyAddBtn}
-                onPress={() => setAdding(true)}
-              >
+              <Pressable style={styles.emptyAddBtn} onPress={() => setAdding(true)}>
                 <Ionicons name="add" size={16} color={theme.colors.darkText} />
                 <Text style={styles.emptyAddBtnText}>Add your first release</Text>
               </Pressable>
@@ -439,7 +444,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     letterSpacing: 0.5,
   },
-  releaseDate: {
+  fanCount: {
     fontFamily: theme.fonts.ui,
     fontSize: theme.fontSizes.tiny,
     color: theme.colors.darkMuted,
