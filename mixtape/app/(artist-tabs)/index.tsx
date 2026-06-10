@@ -119,6 +119,7 @@ export default function ArtistInsights() {
   const [fanCount, setFanCount] = useState(0);
   const [recentShareCount, setRecentShareCount] = useState(0);
   const [cityCount, setCityCount] = useState(0);
+  const [releaseCount, setReleaseCount] = useState(0);
   const [consentedDates, setConsentedDates] = useState<string[]>([]);
   const [topTracks, setTopTracks] = useState<TrackTally[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,6 +146,13 @@ export default function ArtistInsights() {
         .single();
 
       if (profile && mounted.current) setArtistName((profile as Profile).name);
+
+      const { count: releases } = await supabase
+        .from("releases")
+        .select("*", { count: "exact", head: true })
+        .eq("artist_id", user.id);
+
+      if (mounted.current) setReleaseCount(releases ?? 0);
 
       const { data: followRows } = await supabase
         .from("fan_follows")
@@ -314,9 +322,9 @@ export default function ArtistInsights() {
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>
-              {topTracks.length > 0 ? topTracks.length : "--"}
+              {releaseCount > 0 ? releaseCount : "--"}
             </Text>
-            <Text style={styles.statLabel}>UNIQUE{"\n"}TRACKS</Text>
+            <Text style={styles.statLabel}>RELEASES</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>
