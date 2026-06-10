@@ -42,9 +42,17 @@ interface Release {
   genre_ids: number[];
 }
 
+type RawRelease = Omit<Release, "fan_count" | "release_type"> & {
+  release_type?: Release["release_type"] | null;
+};
+
 function parseTrackCount(value: string): number {
   const parsed = Number.parseInt(value.trim(), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function isMissingColumn(error: any, column: string): boolean {
+  return error?.code === "42703" && String(error?.message ?? "").includes(column);
 }
 
 function releaseTypeLabel(type: Release["release_type"]): string {
@@ -131,18 +139,24 @@ export default function ReleasesTab() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || !mounted.current) return;
 
-      const [releasesRes, followsRes] = await Promise.all([
-        supabase
+      let releasesRes: any = await supabase
+        .from("releases")
+        .select("id, title, release_type, album_title, track_count, genre_ids")
+        .eq("artist_id", user.id);
+
+      if (isMissingColumn(releasesRes.error, "release_type")) {
+        releasesRes = await supabase
           .from("releases")
-          .select("id, title, release_type, album_title, track_count, genre_ids")
-          .eq("artist_id", user.id),
-        supabase
-          .from("fan_follows")
-          .select("top_track")
-          .eq("artist_id", user.id)
-          .not("consented_at", "is", null)
-          .not("top_track", "is", null),
-      ]);
+          .select("id, title, album_title, track_count, genre_ids")
+          .eq("artist_id", user.id);
+      }
+
+      const followsRes = await supabase
+        .from("fan_follows")
+        .select("top_track")
+        .eq("artist_id", user.id)
+        .not("consented_at", "is", null)
+        .not("top_track", "is", null);
 
       if (
         releasesRes.error &&
@@ -153,7 +167,7 @@ export default function ReleasesTab() {
         return;
       }
 
-      const rawReleases = (releasesRes.data ?? []) as Omit<Release, "fan_count">[];
+      const rawReleases = (releasesRes.data ?? []) as RawRelease[];
 
       const fanCounts: Record<string, number> = {};
       for (const row of followsRes.data ?? []) {
@@ -164,6 +178,7 @@ export default function ReleasesTab() {
 
       const withCounts: Release[] = rawReleases.map((r) => ({
         ...r,
+        release_type: r.release_type ?? (r.album_title ? "album" : "single"),
         genre_ids: r.genre_ids ?? [],
         fan_count: fanCounts[r.title] ?? 0,
       }));
@@ -190,18 +205,31 @@ export default function ReleasesTab() {
 
       const trackCount = parseTrackCount(newTracks);
 
-      const { data, error } = await supabase
+      const payload = {
+        artist_id: user.id,
+        title: newTitle.trim(),
+        release_type: newKind,
+        album_title: newKind === "single" ? null : newAlbumTitle.trim(),
+        track_count: newKind === "single" ? 1 : trackCount,
+        genre_ids: newGenreIds,
+      };
+
+      let { data, error } = await supabase
         .from("releases")
-        .insert({
-          artist_id: user.id,
-          title: newTitle.trim(),
-          release_type: newKind,
-          album_title: newKind === "single" ? null : newAlbumTitle.trim(),
-          track_count: newKind === "single" ? 1 : trackCount,
-          genre_ids: newGenreIds,
-        })
+        .insert(payload)
         .select()
         .single();
+
+      if (isMissingColumn(error, "release_type")) {
+        const { release_type, ...legacyPayload } = payload;
+        const legacyResult = await supabase
+          .from("releases")
+          .insert(legacyPayload)
+          .select()
+          .single();
+        data = legacyResult.data;
+        error = legacyResult.error;
+      }
 
       if (error) {
         Alert.alert("Error", error.message);
@@ -209,9 +237,15 @@ export default function ReleasesTab() {
       }
 
       if (data && mounted.current) {
+        const saved = data as RawRelease;
         setReleases((prev) => [
           ...prev,
-          { ...(data as Omit<Release, "fan_count">), fan_count: 0 },
+          {
+            ...saved,
+            release_type: saved.release_type ?? newKind,
+            genre_ids: saved.genre_ids ?? [],
+            fan_count: 0,
+          },
         ]);
       }
 
