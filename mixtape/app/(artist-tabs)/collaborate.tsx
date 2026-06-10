@@ -90,7 +90,7 @@ function sharedGenres(a: GenreVector, b: GenreVector): SharedGenre[] {
   return results.sort((x, y) => y.score - x.score);
 }
 
-// Capitalise a slug for display: "indie-pop" → "Indie Pop"
+// Capitalise a slug for display: "indie-pop" -> "Indie Pop"
 function slugToLabel(slug: string): string {
   return slug
     .split("-")
@@ -184,7 +184,7 @@ export default function Collaborate() {
     );
   }
 
-  // Similarity 0–1 → percentage label
+  // Similarity 0-1 -> percentage label
   function similarityLabel(s: number): string {
     return `${Math.round(s * 100)}% match`;
   }
@@ -267,7 +267,7 @@ export default function Collaborate() {
                     {rec.name}
                   </Text>
                   <Text style={styles.cardHandle} numberOfLines={1}>
-                    {rec.username ? `@${rec.username}  ·  ` : ""}
+                    {rec.username ? `@${rec.username}, ` : ""}
                     {similarityLabel(rec.similarity)}
                   </Text>
                 </View>

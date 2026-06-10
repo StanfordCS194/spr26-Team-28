@@ -4,7 +4,7 @@
  * A fan-facing dashboard that greets the listener and recaps THEIR OWN taste:
  * their top tracks and artists (from their personal `fan_spotify_data`
  * snapshot) plus how many artists they currently share with. Includes clear
- * next-step actions for the two empty states — connect Spotify, and discover
+ * next-step actions for the two empty states - connect Spotify, and discover
  * artists to share with.
  *
  * NOTE: this screen previously contained a copy of the ARTIST insights
@@ -116,8 +116,8 @@ export default function FanHome() {
         <Text style={styles.greeting}>Hey, {loading ? "..." : firstName}.</Text>
         <Text style={styles.subGreeting}>
           {hasSpotify
-            ? "Here's what your listening says about your taste."
-            : "Connect your music to see what your listening says about your taste."}
+            ? "Here's what your Spotify listening says about your taste."
+            : "Connect Spotify to see what your listening says about your taste."}
         </Text>
 
         {/* Connect-Spotify prompt (shown until a snapshot exists) */}
@@ -156,20 +156,20 @@ export default function FanHome() {
             <Text style={styles.statValue}>
               {topTracks.length > 0 ? topTracks.length : "--"}
             </Text>
-            <Text style={styles.statLabel}>TOP TRACKS</Text>
+            <Text style={styles.statLabel}>SPOTIFY{"\n"}TRACKS</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>
               {topArtists.length > 0 ? topArtists.length : "--"}
             </Text>
-            <Text style={styles.statLabel}>TOP ARTISTS</Text>
+            <Text style={styles.statLabel}>SPOTIFY{"\n"}ARTISTS</Text>
           </View>
         </View>
 
         {/* The fan's own top tracks */}
         {topTracks.length > 0 && (
           <>
-            <Text style={styles.sectionLabel}>YOUR TOP TRACKS</Text>
+            <Text style={styles.sectionLabel}>YOUR SPOTIFY TOP TRACKS</Text>
             <View style={styles.listCard}>
               {topTracks.map((track: any, i: number) => (
                 <View
@@ -200,7 +200,7 @@ export default function FanHome() {
         {/* The fan's own top artists */}
         {topArtists.length > 0 && (
           <>
-            <Text style={styles.sectionLabel}>YOUR TOP ARTISTS</Text>
+            <Text style={styles.sectionLabel}>YOUR SPOTIFY TOP ARTISTS</Text>
             <View style={styles.listCard}>
               {topArtists.map((artist: any, i: number) => (
                 <View

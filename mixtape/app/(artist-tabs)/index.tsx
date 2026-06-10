@@ -324,7 +324,7 @@ export default function ArtistInsights() {
 
         <View style={styles.playsCard}>
           <View style={styles.playsHeader}>
-            <Text style={styles.playsLabel}>LISTENER GROWTH</Text>
+            <Text style={styles.playsLabel}>SHARING FAN GROWTH</Text>
             {fanCount > 0 && (
               <View style={styles.growthBadge}>
                 <Text style={styles.growthText}>
@@ -389,7 +389,7 @@ export default function ArtistInsights() {
                     {track.name}
                   </Text>
                   <Text style={styles.trackPlays}>
-                    {track.count} {track.count === 1 ? "listener" : "listeners"}
+                    {track.count} {track.count === 1 ? "fan" : "fans"}
                   </Text>
                 </View>
                 {track.growthPct !== null ? (

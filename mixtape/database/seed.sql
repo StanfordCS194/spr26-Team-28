@@ -9,6 +9,7 @@
 --       - counts recent share events from fan_follows.consented_at
 --       - tallies fan_follows.top_track as fan favorite songs
 --       - counts fan cities from profiles(city,country)
+--       - shows the artist's release-derived genre vector
 --   * app/(artist-tabs)/fans.tsx   (world listener map)
 --       - joins fan_follows -> profiles(city,country) for consenting fans and
 --         geocodes city+country with the "country-state-city" npm package
@@ -224,22 +225,26 @@ begin
 
   insert into public.profiles (
     id, name, username, role, bio, genre, city, country,
-    instagram, tiktok, website
+    instagram, tiktok, website, genre_vector
   ) values (
     artist_id, artist_name, artist_username, 'artist',
     'Dream-pop project from a bedroom in the hills. New record "Afterglow" out now.',
     'dream pop, indie pop, synth-pop',
     'Los Angeles', 'United States',
-    'novaskymusic', 'novaskymusic', 'https://novasky.example.com'
+    'novaskymusic', 'novaskymusic', 'https://novasky.example.com',
+    '{"dream-pop":0.75,"indie-pop":0.5,"synth-pop":1,"electronic":0.25}'::jsonb
   );
 
   -- ~4 releases spanning the catalogue (singles + an EP + an album).
-  insert into public.releases (artist_id, title, release_type, release_date, track_count)
+  insert into public.releases (
+    artist_id, title, release_type, release_date, track_count,
+    album_title, genre_ids
+  )
   values
-    (artist_id, 'Hold the Line',   'single', date '2023-09-15', 1),
-    (artist_id, 'Midnight Static', 'ep',     date '2024-03-22', 4),
-    (artist_id, 'Neon Tide',       'single', date '2024-08-09', 1),
-    (artist_id, 'Afterglow',       'album',  date '2025-02-14', 11);
+    (artist_id, 'Hold the Line',   'single', date '2023-09-15', 1,  null,             array[3, 4]),
+    (artist_id, 'Midnight Static', 'ep',     date '2024-03-22', 4,  'Midnight Static', array[3, 4, 5]),
+    (artist_id, 'Neon Tide',       'single', date '2024-08-09', 1,  null,             array[2, 4]),
+    (artist_id, 'Afterglow',       'album',  date '2025-02-14', 11, 'Afterglow',       array[2, 3, 4]);
 
   -- ==========================================================================
   -- 2) FANS - for each: auth.users -> profile -> fan_follows -> spotify data
@@ -298,6 +303,10 @@ begin
     values (fan_id, artist_id, now(), fan->>'top');
 
     -- --- fan_spotify_data -------------------------------------------------
+    -- Synthetic per-fan Spotify-like snapshot. Fan screens show each fan their
+    -- own top tracks/artists from this row; artist screens should avoid using
+    -- it for direct product claims while Spotify sync is not reliable.
+    --
     -- top_tracks = the first `nova` Nova Sky tracks (so the artist's own songs
     -- always dominate the tally) PLUS `oth` tracks drawn from the shared pool
     -- through a per-fan ROTATING window. Rotating (rather than always taking
