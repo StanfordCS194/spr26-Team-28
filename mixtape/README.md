@@ -309,3 +309,9 @@ refresh token; otherwise it sends the fan back through the Spotify connect flow.
   and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are set in `.env` and restart the
   dev server (env changes require a restart).
 - **Fonts/splash never load** - clear the Metro cache: `npx expo start -c`.
+- **Spotify API error 403 / Premium required** - Spotify may return
+  `Spotify API error 403` with a message like `Active premium subscription
+  required for the owner of the app`. This means the Spotify account that owns
+  the app in the Spotify Developer Dashboard needs an active Premium
+  subscription. After Premium is restored, Spotify says it can take a few hours
+  before API requests are allowed again.
