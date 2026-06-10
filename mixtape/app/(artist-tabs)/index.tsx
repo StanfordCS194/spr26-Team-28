@@ -16,12 +16,7 @@ interface TrackTally {
   growthPct: number | null;
 }
 
-interface GenreTally {
-  name: string;
-  count: number;
-}
-
-const ACTIVE_FAN_WINDOW_DAYS = 7;
+const RECENT_SHARE_WINDOW_DAYS = 7;
 
 function ListenerChart({ points }: { points: { label: string; count: number }[] }) {
   if (points.length < 2) return <View style={{ height: 100, marginTop: 16 }} />;
@@ -122,11 +117,10 @@ export default function ArtistInsights() {
   const mounted = useRef(true);
   const [artistName, setArtistName] = useState("");
   const [fanCount, setFanCount] = useState(0);
-  const [activeFanCount, setActiveFanCount] = useState(0);
+  const [recentShareCount, setRecentShareCount] = useState(0);
   const [cityCount, setCityCount] = useState(0);
   const [consentedDates, setConsentedDates] = useState<string[]>([]);
   const [topTracks, setTopTracks] = useState<TrackTally[]>([]);
-  const [topGenres, setTopGenres] = useState<GenreTally[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -168,15 +162,15 @@ export default function ArtistInsights() {
         setFanCount(followRows.length);
         setConsentedDates(followRows.map((r: any) => r.consented_at));
         setTopTracks(buildTopTracks(followRows));
+        setRecentShareCount(countRecentShares(followRows));
       }
 
       const fanIds = followRows.map((f: any) => f.fan_id);
 
       if (fanIds.length === 0) {
         if (mounted.current) {
-          setActiveFanCount(0);
+          setRecentShareCount(0);
           setCityCount(0);
-          setTopGenres([]);
         }
         return;
       }
@@ -191,17 +185,6 @@ export default function ArtistInsights() {
           profileRows.map((p: any) => p.city).filter(Boolean)
         );
         setCityCount(uniqueCities.size);
-      }
-
-      // Consenting fans' Spotify top artists carry genres; tally them.
-      const { data: spotifyRows } = await supabase
-        .from("fan_spotify_data")
-        .select("top_artists, fetched_at")
-        .in("fan_id", fanIds);
-
-      if (mounted.current && spotifyRows) {
-        setTopGenres(buildTopGenres(spotifyRows));
-        setActiveFanCount(countActiveFans(spotifyRows));
       }
     } catch (e) {
       if (mounted.current) Alert.alert("Error", "Could not load dashboard data.");
@@ -238,27 +221,11 @@ export default function ArtistInsights() {
       });
   }
 
-  // Count how often each genre appears across consenting fans' top artists.
-  function buildTopGenres(rows: any[]): GenreTally[] {
-    const counts: Record<string, number> = {};
-    for (const row of rows) {
-      for (const artist of row?.top_artists ?? []) {
-        for (const genre of artist?.genres ?? []) {
-          counts[genre] = (counts[genre] ?? 0) + 1;
-        }
-      }
-    }
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name, count]) => ({ name, count }));
-  }
-
-  function countActiveFans(rows: any[]): number {
-    const cutoff = Date.now() - ACTIVE_FAN_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  function countRecentShares(rows: any[]): number {
+    const cutoff = Date.now() - RECENT_SHARE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
     return rows.filter((row) => {
-      const fetchedAt = new Date(row?.fetched_at).getTime();
-      return Number.isFinite(fetchedAt) && fetchedAt >= cutoff;
+      const consentedAt = new Date(row?.consented_at).getTime();
+      return Number.isFinite(consentedAt) && consentedAt >= cutoff;
     }).length;
   }
 
@@ -281,7 +248,7 @@ export default function ArtistInsights() {
 
   const firstName = artistName.split(" ")[0];
   const listenerPoints = buildListenerPoints(consentedDates);
-  const hasData = topTracks.length > 0 || topGenres.length > 0 || activeFanCount > 0;
+  const hasData = fanCount > 0 || topTracks.length > 0 || recentShareCount > 0;
 
   const growthDisplay = (() => {
     if (listenerPoints.length < 2) return "--";
@@ -316,7 +283,7 @@ export default function ArtistInsights() {
             <Text style={styles.privacyBold}>
               {fanCount} {fanCount === 1 ? "fan" : "fans"}
             </Text>{" "}
-            who explicitly chose to share with you. Aggregated only — no
+            who explicitly chose to share with you. Aggregated only - no
             individual data.
           </Text>
         </View>
@@ -342,8 +309,8 @@ export default function ArtistInsights() {
             <Text style={styles.statLabel}>CONSENTING{"\n"}FANS</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{activeFanCount || "--"}</Text>
-            <Text style={styles.statLabel}>ACTIVE{"\n"}7 DAYS</Text>
+            <Text style={styles.statValue}>{recentShareCount || "--"}</Text>
+            <Text style={styles.statLabel}>NEW SHARES{"\n"}7 DAYS</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>
@@ -362,7 +329,7 @@ export default function ArtistInsights() {
         {topTracks.length > 0 && (
           <View style={styles.tracksSection}>
             <View style={styles.tracksSectionHeader}>
-              <Text style={styles.tracksSectionTitle}>Top tracks from fans</Text>
+              <Text style={styles.tracksSectionTitle}>Fan favorite songs</Text>
             </View>
 
             {topTracks.map((track, i) => (
@@ -393,30 +360,12 @@ export default function ArtistInsights() {
           </View>
         )}
 
-        {topGenres.length > 0 && (
-          <View style={styles.genresSection}>
-            <View style={styles.tracksSectionHeader}>
-              <Text style={styles.tracksSectionTitle}>
-                Genres your fans listen to
-              </Text>
-            </View>
-            <View style={styles.genreChips}>
-              {topGenres.map((genre) => (
-                <View key={genre.name} style={styles.genreChip}>
-                  <Text style={styles.genreChipText}>{genre.name}</Text>
-                  <Text style={styles.genreChipCount}>{genre.count}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
         {!hasData && !loading && (
           <View style={styles.emptyCard}>
             <Ionicons name="analytics-outline" size={28} color={theme.colors.darkMuted} />
             <Text style={styles.emptyTitle}>Waiting for fan data</Text>
             <Text style={styles.emptyText}>
-              Once fans share with you, their aggregated listening patterns will appear here.
+              Once fans share with you, their cities and favorite songs will appear here.
             </Text>
           </View>
         )}
@@ -428,40 +377,6 @@ export default function ArtistInsights() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.darkBackground },
   scrollContent: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 40 },
-
-  genresSection: {
-    backgroundColor: theme.colors.darkCard,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  genreChips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 14,
-  },
-  genreChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  genreChipText: {
-    fontFamily: theme.fonts.sansSemiBold,
-    fontSize: theme.fontSizes.small,
-    color: theme.colors.darkText,
-  },
-  genreChipCount: {
-    fontFamily: theme.fonts.ui,
-    fontSize: theme.fontSizes.tiny,
-    color: theme.colors.secondary,
-  },
 
   topBar: {
     flexDirection: "row",

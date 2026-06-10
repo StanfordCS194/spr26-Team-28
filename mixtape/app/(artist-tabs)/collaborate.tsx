@@ -2,17 +2,17 @@
  * Artist COLLAB tab - collaboration recommendations.
  *
  * Recommends other artists for the signed-in artist to collaborate with, based
- * on AGGREGATED fan data (never individual fan records, to stay aligned with
- * the product's privacy model):
+ * on internal Mixtape data that is already available to the artist:
  *
- *   1. Fan genre fit - how well a candidate artist's genres match the genres
- *      the signed-in artist's consenting fans actually listen to.
- *   2. Release activity - whether that candidate has public release data that
+ *   1. Fan city fit - whether a candidate is based in a city where the artist
+ *      already has consenting fans.
+ *   2. Artist genre fit - whether the candidate's self-selected genres overlap
+ *      with the signed-in artist's profile genres.
+ *   3. Release activity - whether that candidate has public release data that
  *      makes them look active enough to act on.
  *
- * Candidates are scored and ranked client-side from aggregate data only,
- * mirroring the INSIGHTS screen. For larger data sets this would move to a
- * Postgres RPC.
+ * Candidates are scored and ranked client-side from aggregate data only. For
+ * larger data sets this would move to a Postgres RPC.
  *
  * Stretch goal (messaging) is surfaced as a clearly-labelled "coming soon"
  * action rather than a dead button.
@@ -42,9 +42,14 @@ interface ArtistProfile {
   country: string | null;
 }
 
-interface FanGenreMatch {
-  genre: string;
+interface FanCityMatch {
+  city: string;
+  country: string | null;
   count: number;
+}
+
+interface GenreMatch {
+  genre: string;
 }
 
 interface ReleaseRow {
@@ -66,11 +71,13 @@ interface Recommendation {
   name: string;
   username: string | null;
   location: string;
-  fanGenreMatches: FanGenreMatch[];
+  fanCityMatch: FanCityMatch | null;
+  genreMatches: GenreMatch[];
   releaseActivity: ReleaseActivity;
   score: number;
 }
 
+const CITY_WEIGHT = 3;
 const GENRE_WEIGHT = 2;
 const RECENT_RELEASE_BONUS = 2;
 const MAX_RESULTS = 12;
@@ -81,6 +88,12 @@ function splitGenres(value: string | null): string[] {
     .split(",")
     .map((g) => g.trim())
     .filter(Boolean);
+}
+
+function locationKey(city: string | null, country: string | null): string | null {
+  const cleanCity = city?.trim();
+  if (!cleanCity) return null;
+  return `${cleanCity.toLowerCase()}||${(country ?? "").trim().toLowerCase()}`;
 }
 
 function releaseTypeLabel(value: string): string {
@@ -175,27 +188,24 @@ export default function Collaborate() {
       ] as string[];
       if (mounted.current) setConsentingFans(myFanIds.length);
 
-      // 2. Aggregate the genres MY fans actually listen to (from their top
-      //    artists). This stays inside the artist's consent boundary.
-      const fanGenreCounts = new Map<string, FanGenreMatch>();
+      // 2. Aggregate fan cities from profile data collected in onboarding.
+      const fanCityCounts = new Map<string, FanCityMatch>();
       if (myFanIds.length > 0) {
-        const { data: spotifyRows } = await supabase
-          .from("fan_spotify_data")
-          .select("top_artists")
-          .in("fan_id", myFanIds);
-        for (const row of spotifyRows ?? []) {
-          for (const artist of row?.top_artists ?? []) {
-            for (const g of artist?.genres ?? []) {
-              const genre = String(g).trim();
-              if (!genre) continue;
-              const key = genre.toLowerCase();
-              const current = fanGenreCounts.get(key);
-              fanGenreCounts.set(key, {
-                genre: current?.genre ?? genre,
-                count: (current?.count ?? 0) + 1,
-              });
-            }
-          }
+        const { data: fanProfiles, error: fanProfilesError } = await supabase
+          .from("profiles")
+          .select("city, country")
+          .in("id", myFanIds);
+        if (fanProfilesError) throw fanProfilesError;
+
+        for (const profile of fanProfiles ?? []) {
+          const key = locationKey(profile?.city ?? null, profile?.country ?? null);
+          if (!key || !profile?.city) continue;
+          const current = fanCityCounts.get(key);
+          fanCityCounts.set(key, {
+            city: current?.city ?? profile.city,
+            country: current?.country ?? profile.country ?? null,
+            count: (current?.count ?? 0) + 1,
+          });
         }
       }
 
@@ -209,9 +219,15 @@ export default function Collaborate() {
       const candidateArtists = ((artists ?? []) as ArtistProfile[]).filter(
         (a) => a.id !== user.id,
       );
+      const myArtist = ((artists ?? []) as ArtistProfile[]).find(
+        (a) => a.id === user.id,
+      );
+      const myGenreSet = new Set(
+        splitGenres(myArtist?.genre ?? null).map((genre) => genre.toLowerCase()),
+      );
 
       // 4. Public releases add an activity signal and a fallback when fan
-      //    genre data is sparse.
+      //    city/genre data is sparse.
       let releaseActivityByArtist = new Map<string, ReleaseActivity>();
       const candidateIds = candidateArtists.map((a) => a.id);
       if (candidateIds.length > 0) {
@@ -229,28 +245,34 @@ export default function Collaborate() {
         );
       }
 
-      // 5. Score each candidate by fan genre fit, with release activity as a
-      //    fallback when genre data is still thin.
+      // 5. Score each candidate by internal fan city fit, artist genre overlap,
+      //    and release activity.
       const scored: Recommendation[] = (artists ?? [])
         .filter((a: ArtistProfile) => a.id !== user.id)
         .map((a: ArtistProfile) => {
-          const fanGenreMatches = splitGenres(a.genre)
-            .map((genre) => fanGenreCounts.get(genre.toLowerCase()))
-            .filter((match): match is FanGenreMatch => Boolean(match))
-            .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
-          const genreScore = fanGenreMatches.reduce(
-            (sum, match) => sum + match.count,
-            0,
-          );
+          const candidateLocationKey = locationKey(a.city, a.country);
+          const fanCityMatch = candidateLocationKey
+            ? fanCityCounts.get(candidateLocationKey) ?? null
+            : null;
+          const genreMatches = splitGenres(a.genre)
+            .filter((genre) => myGenreSet.has(genre.toLowerCase()))
+            .sort((a, b) => a.localeCompare(b))
+            .map((genre) => ({ genre }));
+          const cityScore = fanCityMatch?.count ?? 0;
+          const genreScore = genreMatches.length;
           const releaseActivity =
             releaseActivityByArtist.get(a.id) ?? emptyReleaseActivity();
-          const score = genreScore * GENRE_WEIGHT + releaseScore(releaseActivity);
+          const score =
+            cityScore * CITY_WEIGHT +
+            genreScore * GENRE_WEIGHT +
+            releaseScore(releaseActivity);
           return {
             id: a.id,
             name: a.name ?? a.username ?? "Unknown artist",
             username: a.username,
             location: [a.city, a.country].filter(Boolean).join(", "),
-            fanGenreMatches,
+            fanCityMatch,
+            genreMatches,
             releaseActivity,
             score,
           };
@@ -284,8 +306,8 @@ export default function Collaborate() {
         <Text style={styles.topLabel}>COLLABORATE</Text>
         <Text style={styles.title}>Artists to work with</Text>
         <Text style={styles.subtitle}>
-          Suggested from your fans' top genres and artists who are actively
-          releasing music. Aggregated only, never individual data.
+          Suggested from fan city overlap, your artist genres, and public
+          release activity. Built from internal Mixtape data only.
         </Text>
 
         {loading && (
@@ -319,8 +341,8 @@ export default function Collaborate() {
             <Text style={styles.emptyTitle}>No matches yet</Text>
             <Text style={styles.emptyText}>
               {consentingFans === 0
-                ? "Once fans share their listening with you, we'll use their top genres to find artists with active releases."
-                : "We could not find artists with matching audience genres or release activity yet. Check back as more artists add releases and more fans share."}
+                ? "Once fans share with you, we'll use their cities, your genres, and release activity to find artists."
+                : "We could not find artists with matching fan cities, shared genres, or release activity yet. Check back as more artists add releases."}
             </Text>
           </View>
         )}
@@ -353,7 +375,19 @@ export default function Collaborate() {
               </View>
 
               <View style={styles.reasonRow}>
-                {rec.fanGenreMatches.slice(0, 2).map((match) => (
+                {rec.fanCityMatch && (
+                  <View style={styles.reasonChip}>
+                    <Ionicons
+                      name="location-outline"
+                      size={12}
+                      color={theme.colors.secondary}
+                    />
+                    <Text style={styles.reasonText}>
+                      Fan city: {rec.fanCityMatch.city}
+                    </Text>
+                  </View>
+                )}
+                {rec.genreMatches.slice(0, 2).map((match) => (
                   <View key={match.genre} style={styles.reasonChip}>
                     <Ionicons
                       name="musical-note"
@@ -361,7 +395,7 @@ export default function Collaborate() {
                       color={theme.colors.primary}
                     />
                     <Text style={styles.reasonText}>
-                      Fan genre: {match.genre}
+                      Shared genre: {match.genre}
                     </Text>
                   </View>
                 ))}
