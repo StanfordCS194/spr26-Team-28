@@ -124,234 +124,235 @@ export default function MakeAccount() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <KeyboardAvoidingView
-          style={styles.keyboardView}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 24 : 0}
+      >
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
         >
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <Pressable style={styles.back} onPress={() => router.back()}>
-              <Ionicons
-                name="chevron-back"
-                size={20}
-                color={theme.colors.text}
-              />
-            </Pressable>
+          <Pressable style={styles.back} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
+          </Pressable>
 
-            <View style={styles.header}>
-              <Text style={styles.title}>Create an account.</Text>
-              <Text style={styles.subtitle}>
-                Set up your name, username, email, and password. You will pick
-                whether you are a Fan or Artist next.
-              </Text>
+          <View style={styles.header}>
+            <Text style={styles.title}>Create an account.</Text>
+            <Text style={styles.subtitle}>
+              Set up your name, username, email, and password. You will pick
+              whether you are a Fan or Artist next.
+            </Text>
+          </View>
+
+          <View style={styles.fields}>
+            {/* Name field */}
+            <View
+              style={[
+                styles.inputWrapper,
+                nameFocused && styles.inputWrapperFocused,
+              ]}
+            >
+              <Text style={styles.inputLabel}>NAME</Text>
+              <TextInput
+                style={styles.input}
+                value={name}
+                onChangeText={(v) => {
+                  setName(v);
+                  clearFormError();
+                }}
+                autoCorrect={false}
+                onFocus={() => setNameFocused(true)}
+                onBlur={() => setNameFocused(false)}
+              />
             </View>
 
-            <View style={styles.fields}>
-              {/* Name field */}
-              <View
-                style={[
-                  styles.inputWrapper,
-                  nameFocused && styles.inputWrapperFocused,
-                ]}
-              >
-                <Text style={styles.inputLabel}>NAME</Text>
-                <TextInput
-                  style={styles.input}
-                  value={name}
-                  onChangeText={(v) => {
-                    setName(v);
-                    clearFormError();
-                  }}
-                  autoCorrect={false}
-                  onFocus={() => setNameFocused(true)}
-                  onBlur={() => setNameFocused(false)}
-                />
-              </View>
+            {/* Username field */}
+            <View
+              style={[
+                styles.inputWrapper,
+                usernameFocused && styles.inputWrapperFocused,
+              ]}
+            >
+              <Text style={styles.inputLabel}>USERNAME</Text>
+              <TextInput
+                style={styles.input}
+                value={username}
+                onChangeText={(v) => {
+                  setUsername(v);
+                  clearFormError();
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                onFocus={() => setUsernameFocused(true)}
+                onBlur={() => setUsernameFocused(false)}
+              />
+            </View>
 
-              {/* Username field */}
+            {/* Email field */}
+            <View>
               <View
                 style={[
                   styles.inputWrapper,
-                  usernameFocused && styles.inputWrapperFocused,
+                  emailFocused && styles.inputWrapperFocused,
+                  hasAttempted &&
+                    email.length > 0 &&
+                    !emailValid &&
+                    styles.inputWrapperError,
                 ]}
               >
-                <Text style={styles.inputLabel}>USERNAME</Text>
+                <Text style={styles.inputLabel}>EMAIL</Text>
                 <TextInput
                   style={styles.input}
-                  value={username}
+                  value={email}
                   onChangeText={(v) => {
-                    setUsername(v);
+                    setEmail(v);
                     clearFormError();
                   }}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  onFocus={() => setUsernameFocused(true)}
-                  onBlur={() => setUsernameFocused(false)}
+                  keyboardType="email-address"
+                  onFocus={() => setEmailFocused(true)}
+                  onBlur={() => setEmailFocused(false)}
                 />
               </View>
-
-              {/* Email field */}
-              <View>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    emailFocused && styles.inputWrapperFocused,
-                    hasAttempted &&
-                      email.length > 0 &&
-                      !emailValid &&
-                      styles.inputWrapperError,
-                  ]}
-                >
-                  <Text style={styles.inputLabel}>EMAIL</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={email}
-                    onChangeText={(v) => {
-                      setEmail(v);
-                      clearFormError();
-                    }}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="email-address"
-                    onFocus={() => setEmailFocused(true)}
-                    onBlur={() => setEmailFocused(false)}
-                  />
-                </View>
-                {hasAttempted && email.length > 0 && !emailValid && (
-                  <Text style={styles.errorText}>
-                    Enter a valid email address.
-                  </Text>
-                )}
-              </View>
-
-              {/* Password field with show/hide toggle */}
-              <View>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    styles.passwordWrapper,
-                    passwordFocused && styles.inputWrapperFocused,
-                  ]}
-                >
-                  <Text style={styles.inputLabel}>PASSWORD</Text>
-
-                  <TextInput
-                    style={[styles.input, styles.passwordInput]}
-                    value={password}
-                    onChangeText={(v) => {
-                      setPassword(v);
-                      clearFormError();
-                    }}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    onFocus={() => setPasswordFocused(true)}
-                    onBlur={() => setPasswordFocused(false)}
-                  />
-
-                  <Pressable
-                    style={styles.eyeButton}
-                    onPress={() => setShowPassword((s) => !s)}
-                    hitSlop={8}
-                  >
-                    <Ionicons
-                      name={showPassword ? "eye-off-outline" : "eye-outline"}
-                      size={25}
-                      color={theme.colors.muted}
-                    />
-                  </Pressable>
-                </View>
-
-                {/* Password strength indicator */}
-                {password.length > 0 && (
-                  <View style={styles.strengthBox}>
-                    {renderCheck("At least 8 characters", checks.hasMinLength)}
-                    {renderCheck("Contains a number", checks.hasNumber)}
-                  </View>
-                )}
-              </View>
-
-              {/* Confirm password field */}
-              <View>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    styles.passwordWrapper,
-                    confirmFocused && styles.inputWrapperFocused,
-                    hasAttempted &&
-                      confirmPassword.length > 0 &&
-                      !doPasswordsMatch &&
-                      styles.inputWrapperError,
-                  ]}
-                >
-                  <Text style={styles.inputLabel}>CONFIRM PASSWORD</Text>
-
-                  <TextInput
-                    style={[styles.input, styles.passwordInput]}
-                    value={confirmPassword}
-                    onChangeText={(v) => {
-                      setConfirmPassword(v);
-                      clearFormError();
-                    }}
-                    secureTextEntry={!showConfirm}
-                    autoCapitalize="none"
-                    onFocus={() => setConfirmFocused(true)}
-                    onBlur={() => setConfirmFocused(false)}
-                  />
-
-                  <Pressable
-                    style={styles.eyeButton}
-                    onPress={() => setShowConfirm((s) => !s)}
-                    hitSlop={8}
-                  >
-                    <Ionicons
-                      name={showConfirm ? "eye-off-outline" : "eye-outline"}
-                      size={25}
-                      color={theme.colors.muted}
-                    />
-                  </Pressable>
-                </View>
-
-                {confirmPassword.length > 0 && !doPasswordsMatch && (
-                  <Text style={styles.errorText}>Passwords do not match.</Text>
-                )}
-              </View>
+              {hasAttempted && email.length > 0 && !emailValid && (
+                <Text style={styles.errorText}>
+                  Enter a valid email address.
+                </Text>
+              )}
             </View>
 
-            {formError.length > 0 && (
-              <Text style={styles.formErrorText}>{formError}</Text>
-            )}
+            {/* Password field with show/hide toggle */}
+            <View>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  styles.passwordWrapper,
+                  passwordFocused && styles.inputWrapperFocused,
+                ]}
+              >
+                <Text style={styles.inputLabel}>PASSWORD</Text>
 
-            <View style={styles.spacer} />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={password}
+                  onChangeText={(v) => {
+                    setPassword(v);
+                    clearFormError();
+                  }}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  textContentType="oneTimeCode"
+                  importantForAutofill="no"
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => setPasswordFocused(false)}
+                />
 
-      <View style={styles.footer}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.button,
-            pressed && !isDisabled && styles.buttonPressed,
-            isDisabled && styles.buttonDisabled,
-          ]}
-          onPress={createAccount}
-          disabled={isDisabled}
-        >
-          <Ionicons
-            name="person-add-outline"
-            size={18}
-            color={theme.colors.darkText}
-          />
-          <Text style={styles.buttonLabel}>
-            {loading ? "Creating account..." : "Create account"}
-          </Text>
-        </Pressable>
-      </View>
+                <Pressable
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword((s) => !s)}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={25}
+                    color={theme.colors.muted}
+                  />
+                </Pressable>
+              </View>
+
+              {/* Password strength indicator */}
+              {password.length > 0 && (
+                <View style={styles.strengthBox}>
+                  {renderCheck("At least 8 characters", checks.hasMinLength)}
+                  {renderCheck("Contains a number", checks.hasNumber)}
+                </View>
+              )}
+            </View>
+
+            {/* Confirm password field */}
+            <View>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  styles.passwordWrapper,
+                  confirmFocused && styles.inputWrapperFocused,
+                  hasAttempted &&
+                    confirmPassword.length > 0 &&
+                    !doPasswordsMatch &&
+                    styles.inputWrapperError,
+                ]}
+              >
+                <Text style={styles.inputLabel}>CONFIRM PASSWORD</Text>
+
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={confirmPassword}
+                  onChangeText={(v) => {
+                    setConfirmPassword(v);
+                    clearFormError();
+                  }}
+                  secureTextEntry={!showConfirm}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoComplete="off"
+                  textContentType="oneTimeCode"
+                  importantForAutofill="no"
+                  onFocus={() => setConfirmFocused(true)}
+                  onBlur={() => setConfirmFocused(false)}
+                />
+
+                <Pressable
+                  style={styles.eyeButton}
+                  onPress={() => setShowConfirm((s) => !s)}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={showConfirm ? "eye-off-outline" : "eye-outline"}
+                    size={25}
+                    color={theme.colors.muted}
+                  />
+                </Pressable>
+              </View>
+
+              {confirmPassword.length > 0 && !doPasswordsMatch && (
+                <Text style={styles.errorText}>Passwords do not match.</Text>
+              )}
+            </View>
+          </View>
+
+          {formError.length > 0 && (
+            <Text style={styles.formErrorText}>{formError}</Text>
+          )}
+
+          <View style={styles.footer}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.button,
+                pressed && !isDisabled && styles.buttonPressed,
+                isDisabled && styles.buttonDisabled,
+              ]}
+              onPress={createAccount}
+              disabled={isDisabled}
+            >
+              <Ionicons
+                name="person-add-outline"
+                size={18}
+                color={theme.colors.darkText}
+              />
+              <Text style={styles.buttonLabel}>
+                {loading ? "Creating account..." : "Create account"}
+              </Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -361,9 +362,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  content: {
-    flex: 1,
-  },
   keyboardView: {
     flex: 1,
   },
@@ -371,9 +369,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 8,
-    paddingBottom: 24,
+    paddingBottom: 48,
   },
   back: {
     width: 36,
@@ -404,11 +403,8 @@ const styles = StyleSheet.create({
   fields: {
     gap: 30,
   },
-  spacer: {
-    minHeight: 40,
-  },
   footer: {
-    paddingHorizontal: 24,
+    marginTop: 48,
     paddingBottom: 24,
     paddingTop: 12,
     backgroundColor: theme.colors.background,
